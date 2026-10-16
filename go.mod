@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/charmbracelet/huh v1.0.0
+	github.com/moby/patternmatcher v0.6.1
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )
