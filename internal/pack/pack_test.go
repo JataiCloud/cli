@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -108,6 +109,105 @@ func TestPackReincludesWildcardNegationInsideIgnoredDir(t *testing.T) {
 	got := entries(t, res.Path)
 	if got["docs/keep.md"] == nil || got["docs/drop.md"] != nil {
 		t.Fatalf("entries = %v", slices.Collect(mapsKeys(got)))
+	}
+}
+
+func TestPackWildcardNegationDoesNotReopenDefaultIgnores(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, ".dockerignore", "*\n!**/package.json\n", 0o644)
+	write(t, dir, "package.json", "{}", 0o644)
+	write(t, dir, "packages/web/package.json", "{}", 0o644)
+	write(t, dir, "node_modules/a/package.json", "{}", 0o644)
+	write(t, dir, "packages/web/node_modules/b/package.json", "{}", 0o644)
+	write(t, dir, ".git/x/package.json", "{}", 0o644)
+	write(t, dir, ".next/cache/package.json", "{}", 0o644)
+
+	res, err := Pack(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(res.Path)
+	got := entries(t, res.Path)
+	for _, want := range []string{"package.json", "packages/web/package.json"} {
+		if got[want] == nil {
+			t.Errorf("missing %s", want)
+		}
+	}
+	for name := range got {
+		for _, seg := range strings.Split(name, "/") {
+			if seg == "node_modules" || seg == ".git" || seg == ".next" {
+				t.Errorf("%s should be ignored", name)
+			}
+		}
+	}
+}
+
+func TestPackLiteralNegationReopensFileInsideDefaultIgnoredDir(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, ".dockerignore", "*\n!node_modules/keep/x.txt\n", 0o644)
+	write(t, dir, "node_modules/keep/x.txt", "x", 0o644)
+	write(t, dir, "node_modules/keep/y.txt", "x", 0o644)
+	write(t, dir, "node_modules/drop.js", "x", 0o644)
+
+	res, err := Pack(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(res.Path)
+	got := entries(t, res.Path)
+	if got["node_modules/keep/x.txt"] == nil {
+		t.Error("missing node_modules/keep/x.txt")
+	}
+	if got["node_modules/keep/y.txt"] != nil || got["node_modules/drop.js"] != nil {
+		t.Errorf("entries = %v", slices.Collect(mapsKeys(got)))
+	}
+}
+
+func TestMayReachInsideNormalizesSeparators(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		rel     string
+		want    bool
+	}{
+		{"slash form reaches parent dir", "docs/keep.md", "docs", true},
+		{"backslash form reaches parent dir", `docs\keep.md`, "docs", true},
+		{"backslash form elsewhere does not reach", `docs\keep.md`, "other", false},
+		{"backslash wildcard reaches any dir", `**\keep.md`, "docs", true},
+		{"backslash glob in last segment reaches dir", `docs\*.md`, "docs", true},
+		{"backslash ancestor reaches descendant", `a\b`, "a/b/c", true},
+		{"sibling with shared prefix does not reach", "ab/cd", "abc", false},
+		{"literal prefix into default dir", "node_modules/keep/x.txt", "node_modules", true},
+		{"backslash literal prefix into default dir", `node_modules\keep\x.txt`, "node_modules", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mayReachInside(tc.pattern, tc.rel); got != tc.want {
+				t.Errorf("mayReachInside(%q, %q) = %v, want %v", tc.pattern, tc.rel, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMayReopenDefaultIgnoredRequiresLiteralPrefix(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		rel     string
+		want    bool
+	}{
+		{"wildcard prefix never reopens", "**/package.json", "node_modules", false},
+		{"glob first segment never reopens", "*/package.json", "node_modules", false},
+		{"literal prefix reopens its dir", "node_modules/keep/x.txt", "node_modules", true},
+		{"literal prefix in other dir does not reopen", "node_modules/keep/x.txt", ".git", false},
+		{"backslash literal prefix reopens its dir", `.next\cache\keep.md`, ".next", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mayReopenDefaultIgnored(tc.pattern, tc.rel); got != tc.want {
+				t.Errorf("mayReopenDefaultIgnored(%q, %q) = %v, want %v", tc.pattern, tc.rel, got, tc.want)
+			}
+		})
 	}
 }
 
