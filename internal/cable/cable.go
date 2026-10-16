@@ -18,6 +18,9 @@ import (
 	"github.com/coder/websocket"
 )
 
+// closeGrace é o tempo máximo que Close espera o aperto de mão de encerramento.
+const closeGrace = time.Second
+
 // ErrConnection: o WebSocket não serve — quem chama cai para o polling.
 var ErrConnection = errors.New("WebSocket indisponível")
 
@@ -116,6 +119,12 @@ func endpoints(apiURL string) (string, string, error) {
 }
 
 func (c *Conn) dial(ctx context.Context) error {
+	c.mu.Lock()
+	closed := c.closed
+	c.mu.Unlock()
+	if closed {
+		return c.closedErr()
+	}
 	wsURL, origin, err := endpoints(c.opts.APIURL)
 	if err != nil {
 		return err
@@ -247,6 +256,9 @@ func (c *Conn) Subscribe(ctx context.Context, channel string, params map[string]
 
 // WaitFor assina o canal e espera um dos status de `until`. Linhas com `line`
 // de qualquer assinatura vão para onLine (os logs de build, por exemplo).
+// Recusa de outro canal é ignorada; só a recusa deste canal é erro.
+// WaitFor não pode rodar em paralelo na mesma Conn: use uma Conn por
+// acompanhamento, pois todas as esperas consumiriam o mesmo canal de eventos.
 func (c *Conn) WaitFor(ctx context.Context, channel string, params map[string]any, until []string, onLine func(string)) (string, error) {
 	id, err := c.Subscribe(ctx, channel, params)
 	if err != nil {
@@ -265,6 +277,10 @@ func (c *Conn) WaitFor(ctx context.Context, channel string, params map[string]an
 					return "", err
 				}
 			case e.rejected:
+				if e.identifier != id {
+					c.debugf("recusa ignorada (outro canal): %s", e.identifier)
+					continue
+				}
 				return "", connErr("inscrição recusada em %s", channel)
 			default:
 				if e.message.Line != "" && onLine != nil {
@@ -334,7 +350,11 @@ func (c *Conn) Close() {
 	ws := c.ws
 	c.mu.Unlock()
 	if ws != nil {
+		// Fechamento gracioso limitado a 1 s: um servidor mudo não pode
+		// segurar o processo; cancelar o contexto derruba a conexão.
+		t := time.AfterFunc(closeGrace, c.cancel)
 		_ = ws.Close(websocket.StatusNormalClosure, "")
+		t.Stop()
 	}
 	c.cancel()
 	c.wg.Wait()

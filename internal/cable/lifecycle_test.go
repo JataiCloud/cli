@@ -3,12 +3,15 @@ package cable
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/jataicloud/cli/internal/cable/cabletest"
 )
 
@@ -198,4 +201,55 @@ func TestSubscribingTwiceToTheSameChannelKeepsASingleSubscription(t *testing.T) 
 	if len(conn.subs) != 1 {
 		t.Fatalf("subs = %v", conn.subs)
 	}
+}
+
+func TestRejectionOfAnotherChannelDoesNotAbortTheWait(t *testing.T) {
+	h := &cabletest.Handler{
+		Reject:   map[string]bool{"DeployLogChannel": true},
+		Messages: map[string][]map[string]any{"DeployStatusChannel": {{"status": "live"}}},
+	}
+	conn := connect(t, h)
+	ctx := context.Background()
+	params := map[string]any{"deploy_id": 42}
+	if _, err := conn.Subscribe(ctx, "DeployLogChannel", params); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := conn.WaitFor(ctx, "DeployStatusChannel", params, []string{"live"}, nil)
+
+	if err != nil || status != "live" {
+		t.Fatalf("status = %q, err = %v", status, err)
+	}
+}
+
+func TestCloseIsBoundedWhenThePeerGoesSilent(t *testing.T) {
+	releaseCh := make(chan struct{})
+	release := sync.OnceFunc(func() { close(releaseCh) })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			Subprotocols: []string{"actioncable-v1-json"}, InsecureSkipVerify: true,
+		})
+		if err != nil {
+			return
+		}
+		defer ws.CloseNow()
+		ws.Write(r.Context(), websocket.MessageText, []byte(`{"type":"welcome"}`))
+		<-releaseCh // não lê mais nada: o aperto de mão de encerramento nunca completa
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(release)
+	conn, err := Connect(context.Background(), options(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	conn.Close()
+	elapsed := time.Since(start)
+
+	if elapsed > 3*time.Second {
+		t.Fatalf("Close levou %v", elapsed)
+	}
+	release() // libera o handler, que fecha a conexão dele
+	expectNoGoroutines(t)
 }
