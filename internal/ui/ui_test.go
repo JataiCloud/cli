@@ -62,3 +62,13 @@ func TestSpinnerOutsideTerminalPrintsOnceAndStops(t *testing.T) {
 		t.Fatalf("out = %q", out)
 	}
 }
+
+func TestStopTwiceInTerminalWritesFinalOnceWithoutPanic(t *testing.T) {
+	u, out, _ := newTestUI(false, true)
+	s := u.StartSpinner("Enviando 12KB...")
+	s.Stop("enviado!")
+	s.Stop("enviado!")
+	if strings.Count(out.String(), "enviado!") != 1 {
+		t.Fatalf("out = %q", out)
+	}
+}
