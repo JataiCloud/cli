@@ -92,3 +92,68 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatalf("state = %+v", got)
 	}
 }
+
+func TestSaveTokenTightensExistingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permissões POSIX")
+	}
+	p := Paths{Home: t.TempDir()}
+	if err := os.MkdirAll(p.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveToken(p, "jat_x"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(p.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("dir mode = %v", info.Mode().Perm())
+	}
+}
+
+func TestSaveTokenReplacesWiderCredentials(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permissões POSIX")
+	}
+	p := Paths{Home: t.TempDir()}
+	if err := os.MkdirAll(p.Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.CredentialsFile(), []byte(`{"token":"antigo"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p.CredentialsFile(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(p.CredentialsFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveToken(p, "jat_novo"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(p.CredentialsFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("file mode = %v", info.Mode().Perm())
+	}
+	// Troca atômica: o arquivo novo nasce com 0600 e substitui o antigo; o
+	// inode de 0644 nunca recebe o token.
+	if os.SameFile(before, info) {
+		t.Fatal("credentials rewritten in place; expected atomic replace")
+	}
+	if got := Token(p, env(nil)); got != "jat_novo" {
+		t.Fatalf("token = %q", got)
+	}
+	entries, _ := os.ReadDir(p.Dir())
+	if len(entries) != 1 {
+		t.Fatalf("leftover files in %s: %d entries", p.Dir(), len(entries))
+	}
+}

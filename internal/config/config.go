@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -61,18 +62,50 @@ func Token(p Paths, getenv func(string) string) string {
 	return ""
 }
 
+// SaveToken grava o token com permissão restrita, mesmo quando o diretório
+// ou o arquivo já existem com permissão mais ampla.
 func SaveToken(p Paths, token string) error {
 	if err := os.MkdirAll(p.Dir(), 0o700); err != nil {
 		return err
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(p.Dir(), 0o700); err != nil {
+			return err
+		}
 	}
 	data, err := json.Marshal(credentials{Token: token})
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(p.CredentialsFile(), data, 0o600); err != nil {
+	return writeAtomic(p.Dir(), p.CredentialsFile(), data)
+}
+
+// writeAtomic escreve num temporário criado com 0600 e troca o destino por
+// rename: o token nunca cai num arquivo com permissão mais ampla, nem quando
+// credentials.json já existia com 0644.
+func writeAtomic(dir, target string, data []byte) error {
+	tmp, err := os.CreateTemp(dir, ".credentials-*")
+	if err != nil {
 		return err
 	}
-	return os.Chmod(p.CredentialsFile(), 0o600)
+	name := tmp.Name()
+	err = tmp.Chmod(0o600)
+	if err == nil {
+		_, err = tmp.Write(data)
+	}
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(name, target)
+	}
+	if err != nil {
+		_ = os.Remove(name)
+	}
+	return err
 }
 
 func ClearToken(p Paths) error {
