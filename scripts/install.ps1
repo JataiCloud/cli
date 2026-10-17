@@ -1,6 +1,8 @@
 # scripts/install.ps1 — instala a CLI do Jataí no Windows.
 # Uso: irm https://jataicloud.com.br/install.ps1 | iex
 $ErrorActionPreference = 'Stop'
+# A barra de progresso do Invoke-WebRequest deixa o download muito mais lento.
+$ProgressPreference = 'SilentlyContinue'
 $Repo = 'jataicloud/cli'
 $InstallDir = if ($env:JATAI_INSTALL_DIR) { $env:JATAI_INSTALL_DIR } else { Join-Path $HOME '.jatai\bin' }
 

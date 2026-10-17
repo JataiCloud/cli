@@ -27,10 +27,15 @@ Documentação: https://jataicloud.com.br/docs/quickstart
 
 ## Release
 
-Uma tag `vX.Y.Z` (ou `vX.Y.Z-rc.N`) dispara `.github/workflows/release.yml`: testes, GoReleaser (pacotes `jatai_<versão>_<os>_<arch>.tar.gz`, `.zip` no Windows, `checksums.txt`, `install.sh` e `install.ps1`), conferência dos pacotes e publicação no npm (`node scripts/npm-packages.mjs`, plataformas primeiro e `jatai` por último).
+Uma tag `vX.Y.Z` (ou `vX.Y.Z-rc.N`) dispara `.github/workflows/release.yml`, em dois jobs:
+
+1. `release`: testes, GoReleaser (pacotes `jatai_<versão>_<os>_<arch>.tar.gz`, `.zip` no Windows, `checksums.txt`, `install.sh` e `install.ps1`, cask do Homebrew e manifesto do Scoop), attestation de provenance dos pacotes e upload do `dist/` como artefato do workflow.
+2. `npm` (depende do `release`): testes do npm, conferência dos pacotes gerados e publicação no npm (`node scripts/npm-packages.mjs`, plataformas primeiro e `jatai` por último).
 
 - Os pacotes têm o binário na raiz e esse nome é um contrato com `jatai update` e com os instaladores (`internal/update/release_contract_test.go` confere o `.goreleaser.yaml`).
-- Tags `-rc.N` são releases normais do GitHub, sem marca de pré-lançamento, para que `/releases/latest` (usado por `install.sh`, `install.ps1` e `jatai update`) tenha o que devolver antes da v2.0.0. No npm, versões com `-` saem na dist-tag `next`; as demais, em `latest`.
+- **Se o npm falhar** (token ausente ou expirado, queda do registro), corrija a causa e use "Re-run failed jobs" na execução do workflow: só o job `npm` roda de novo, com o `dist/` do artefato, e os pacotes que já subiram são pulados. Não crie outra tag. Se o job `release` falhar, "Re-run failed jobs" também serve: o GoReleaser substitui os arquivos já enviados à release (`replace_existing_artifacts`).
+- Tags `-rc.N` são releases normais do GitHub, sem marca de pré-lançamento, para que `/releases/latest` (usado por `install.sh`, `install.ps1` e `jatai update`) tenha o que devolver antes da v2.0.0.
+- **dist-tags do npm**: versões com `-` saem em `next`; as demais, em `latest`. Mas a primeira publicação de um pacote no npm também define `latest`, então, até a v2.0.0, `latest` pode apontar para a primeira rc. Para ensaios use `jatai@next`, e publique a versão do curso sem `-`.
 - Segredos: `NPM_TOKEN` (publicação no npm, com provenance) e `TAP_GITHUB_TOKEN` (escrita em `JataiCloud/homebrew-tap` e `JataiCloud/scoop-bucket`). Sem o `TAP_GITHUB_TOKEN`, a release sai com binários e npm, mas sem Homebrew e Scoop (o workflow avisa).
 - Para ensaiar localmente sem publicar: `goreleaser release --snapshot --clean && node scripts/npm-packages.mjs --version 0.0.0-snapshot`, e `JATAI_DIST_DIR=dist go test ./internal/update -run BuiltArchives`.
 - Testes do npm: `node --test "npm/**/*.test.mjs" "scripts/*.test.mjs"` (Node 21 ou mais novo, por causa dos globs).

@@ -21,7 +21,7 @@ builds:
 
 # O nome do pacote e o binário na raiz do arquivo são um contrato com
 # internal/update (ArchiveName e extract) e com scripts/install.*: não mudar
-# um sem o outro (archive_contract_test.go confere).
+# um sem o outro (internal/update/release_contract_test.go confere).
 archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -36,6 +36,8 @@ checksum:
   name_template: checksums.txt
 
 release:
+  # Re-executar o job depois de uma falha sobrescreve os arquivos em vez de dar 422.
+  replace_existing_artifacts: true
   extra_files:
     - glob: ./scripts/install.sh
     - glob: ./scripts/install.ps1

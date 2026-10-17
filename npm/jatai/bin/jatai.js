@@ -6,6 +6,7 @@
 // encontra e o executa.
 
 const { spawn } = require("node:child_process");
+const { isatty } = require("node:tty");
 
 const INSTALL_HINT = "Instale pelo script: https://jataicloud.com.br/install.sh";
 
@@ -32,8 +33,8 @@ function binaryPath(platform = process.platform, arch = process.arch) {
     return require.resolve(`${name}/bin/${file}`);
   } catch {
     throw new Error(
-      `O pacote ${name} não está instalado. Reinstale sem --omit=optional (ou --no-optional) ` +
-        `para o npm baixar o binário da sua plataforma. ${INSTALL_HINT}`,
+      `O pacote ${name} não está instalado, e é ele que traz o binário da sua plataforma. ` +
+        `Reinstale sem --omit=optional, ou instale pelo script: https://jataicloud.com.br/install.sh`,
     );
   }
 }
@@ -52,8 +53,10 @@ function run() {
 
   // Num terminal, o Ctrl-C já chega ao processo filho (mesmo grupo); repassar
   // de novo contaria como o segundo Ctrl-C, que encerra a CLI na hora.
+  // isatty(0) em vez de process.stdin: tocar em process.stdin pode pôr o fd 0
+  // (compartilhado com o filho) em modo não bloqueante e quebrar o `jatai mcp`.
   const forward = (signal) => () => {
-    if (signal === "SIGINT" && process.stdin.isTTY) return;
+    if (signal === "SIGINT" && isatty(0)) return;
     child.kill(signal);
   };
   const handlers = { SIGINT: forward("SIGINT"), SIGTERM: forward("SIGTERM") };
