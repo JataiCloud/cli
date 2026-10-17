@@ -132,6 +132,9 @@ func Latest(ctx context.Context, client *http.Client, apiBase string) (string, e
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		return "", err
 	}
+	if r.TagName == "" {
+		return "", errors.New("o GitHub não informou a versão mais recente")
+	}
 	return strings.TrimPrefix(r.TagName, "v"), nil
 }
 
@@ -198,8 +201,8 @@ func extract(archive []byte, goos string) ([]byte, error) {
 			return nil, err
 		}
 		for _, f := range zr.File {
-			if f.Name == "jatai.exe" {
-				return readZipEntry(f)
+			if f.Name == "jatai.exe" && f.Mode().IsRegular() {
+				return nonEmpty(readZipEntry(f))
 			}
 		}
 		return nil, errors.New("jatai.exe não encontrado no pacote")
@@ -217,10 +220,21 @@ func extract(archive []byte, goos string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if h.Name == "jatai" {
-			return io.ReadAll(tr)
+		if h.Name == "jatai" && h.Typeflag == tar.TypeReg {
+			return nonEmpty(io.ReadAll(tr))
 		}
 	}
+}
+
+// nonEmpty recusa um binário vazio: trocar o executável por zero bytes o quebra.
+func nonEmpty(data []byte, err error) ([]byte, error) {
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errors.New("binário vazio no pacote")
+	}
+	return data, nil
 }
 
 func readZipEntry(f *zip.File) ([]byte, error) {
@@ -232,19 +246,52 @@ func readZipEntry(f *zip.File) ([]byte, error) {
 	return io.ReadAll(rc)
 }
 
-// No Windows o executável em uso não pode ser sobrescrito, mas pode ser
-// renomeado: o antigo vira .old e o novo toma o lugar.
+// replace troca o executável: no Windows o em uso não pode ser sobrescrito,
+// mas pode ser renomeado.
 func replace(exePath string, binary []byte) error {
-	tmp := exePath + ".new"
-	if err := os.WriteFile(tmp, binary, 0o755); err != nil {
+	if runtime.GOOS == "windows" {
+		return replaceWindowsStyle(exePath, binary, os.Rename)
+	}
+	tmp, err := stage(exePath, binary)
+	if err != nil {
 		return err
 	}
-	if runtime.GOOS == "windows" {
-		old := exePath + ".old"
-		_ = os.Remove(old)
-		if err := os.Rename(exePath, old); err != nil {
-			return err
-		}
+	if err := os.Rename(tmp, exePath); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
-	return os.Rename(tmp, exePath)
+	return nil
+}
+
+func stage(exePath string, binary []byte) (string, error) {
+	tmp := exePath + ".new"
+	if err := os.WriteFile(tmp, binary, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	return tmp, nil
+}
+
+// replaceWindowsStyle: o antigo vira .old e o novo toma o lugar; se a segunda
+// troca falhar, o antigo volta, para a CLI nunca ficar sem executável.
+func replaceWindowsStyle(exePath string, binary []byte, rename func(oldpath, newpath string) error) error {
+	old := exePath + ".old"
+	_ = os.Remove(old)
+	tmp, err := stage(exePath, binary)
+	if err != nil {
+		return err
+	}
+	if err := rename(exePath, old); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := rename(tmp, exePath); err != nil {
+		_ = rename(old, exePath)
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

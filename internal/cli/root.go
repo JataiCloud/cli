@@ -24,12 +24,16 @@ func Run(ctx context.Context, a *App, args []string) int {
 
 func newRootCmd(a *App) *cobra.Command {
 	root := &cobra.Command{
-		Use:               "jatai",
-		Short:             "CLI da Jataí — deploy na nuvem brasileira",
-		Version:           a.Version,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
-		PersistentPostRun: func(cmd *cobra.Command, _ []string) { a.maybeNotifyUpdate(cmd.Context()) },
+		Use:           "jatai",
+		Short:         "CLI da Jataí — deploy na nuvem brasileira",
+		Version:       a.Version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
+			if cmd.Name() != "update" {
+				a.maybeNotifyUpdate(cmd.Context())
+			}
+		},
 	}
 	root.SetVersionTemplate("jatai {{.Version}}\n")
 	root.SetOut(a.UI.Out)

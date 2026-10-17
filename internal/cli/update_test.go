@@ -1,10 +1,23 @@
 package cli
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jataicloud/cli/internal/config"
+	"github.com/jataicloud/cli/internal/update"
 )
 
 func TestNotifiesANewVersionAtMostOncePerDay(t *testing.T) {
@@ -91,4 +104,71 @@ func TestOutdatedCLIPointsToThisMachinesUpgradeCommand(t *testing.T) {
 	if code != 1 || !strings.Contains(e.err.String(), "versão mínima é 2.1.0") || !strings.Contains(e.err.String(), "scoop update jatai") {
 		t.Fatalf("code = %d, err = %q", code, e.err)
 	}
+}
+
+func TestNoNoticeRightAfterASuccessfulUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pacote tar.gz")
+	}
+	e := newTestEnv(t)
+	delete(e.vars, "JATAI_NO_UPDATE_CHECK")
+	home, err := filepath.EvalSymlinks(e.app.Paths.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.app.Paths.Home = home
+	exe := filepath.Join(e.app.Paths.BinDir(), "jatai")
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("velho"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e.app.Executable = func() (string, error) { return exe, nil }
+	e.app.LatestVersion = func(context.Context) (string, error) { return "9.9.9", nil }
+	e.app.Now = func() time.Time { return time.Now() }
+	releaseFor(t, e, "9.9.9", "novo")
+
+	code := e.run("update")
+
+	if code != 0 || !strings.Contains(e.out.String(), "jatai atualizada para 9.9.9.") {
+		t.Fatalf("code = %d, out = %q, err = %q", code, e.out, e.err)
+	}
+	if strings.Contains(e.out.String(), "Nova versão") {
+		t.Fatalf("notice after update: %q", e.out)
+	}
+	if data, _ := os.ReadFile(exe); string(data) != "novo" {
+		t.Fatalf("exe = %q", data)
+	}
+	state := config.LoadState(e.app.Paths)
+	if state.LatestVersion != "9.9.9" || time.Since(state.LastUpdateCheck) > time.Minute {
+		t.Fatalf("state = %+v", state)
+	}
+}
+
+// releaseFor publica, no servidor falso, o pacote e o checksums.txt de uma versão.
+func releaseFor(t *testing.T, e *testEnv, version, binary string) {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "jatai", Mode: 0o755, Size: int64(len(binary))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte(binary)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	name := update.ArchiveName(version, runtime.GOOS, runtime.GOARCH)
+	sum := sha256.Sum256(buf.Bytes())
+	e.handle("/v"+version+"/"+name, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(buf.Bytes()) })
+	e.handle("/v"+version+"/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), name)
+	})
+	e.app.DownloadBase = e.vars["JATAI_API_URL"]
 }

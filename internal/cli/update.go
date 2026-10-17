@@ -10,13 +10,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func (a *App) installMethod() update.Method {
+// resolvedExecutable é o executável sem links simbólicos: é ele que se detecta
+// e que se troca.
+func (a *App) resolvedExecutable() (string, error) {
 	exe, err := a.Executable()
 	if err != nil {
-		return update.MethodUnknown
+		return "", err
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
+	}
+	return exe, nil
+}
+
+func (a *App) installMethod() update.Method {
+	exe, err := a.resolvedExecutable()
+	if err != nil {
+		return update.MethodUnknown
 	}
 	return update.DetectMethod(exe, a.Paths.BinDir())
 }
@@ -66,7 +76,7 @@ func newUpdateCmd(a *App) *cobra.Command {
 				a.UI.Success("Você já está na versão mais recente (" + a.Version + ").")
 				return nil
 			}
-			exe, err := a.Executable()
+			exe, err := a.resolvedExecutable()
 			if err != nil {
 				return err
 			}
@@ -74,6 +84,8 @@ func newUpdateCmd(a *App) *cobra.Command {
 			if err := update.Install(cmd.Context(), a.httpClient(), a.DownloadBase, latest, exe); err != nil {
 				return err
 			}
+			// A checagem diária já está em dia: o aviso não deve vir logo depois.
+			_ = config.SaveState(a.Paths, config.State{LastUpdateCheck: a.Now(), LatestVersion: latest})
 			a.UI.Success("jatai atualizada para " + latest + ".")
 			return nil
 		},
