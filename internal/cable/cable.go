@@ -18,9 +18,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// closeGrace é o tempo máximo que Close espera o aperto de mão de encerramento.
-const closeGrace = time.Second
-
 // ErrConnection: o WebSocket não serve — quem chama cai para o polling.
 var ErrConnection = errors.New("WebSocket indisponível")
 
@@ -347,15 +344,13 @@ func (c *Conn) Close() {
 	}
 	c.closed = true
 	close(c.done)
-	ws := c.ws
 	c.mu.Unlock()
-	if ws != nil {
-		// Fechamento gracioso limitado a 1 s: um servidor mudo não pode
-		// segurar o processo; cancelar o contexto derruba a conexão.
-		t := time.AfterFunc(closeGrace, c.cancel)
-		_ = ws.Close(websocket.StatusNormalClosure, "")
-		t.Stop()
-	}
+	// Fechamento abrupto, de propósito: ws.Close() faz o aperto de mão de
+	// encerramento com contexto próprio (5 s) e disputa o mutex de leitura com
+	// a readLoop, então cancelar c.ctx não o interrompe de forma confiável
+	// contra um servidor mudo. Cancelar c.ctx faz a readLoop sair de ws.Read, e
+	// ela fecha a conexão (defer CloseNow). O ActionCable não exige o frame de
+	// close: o Rails trata o TCP fechado como desconexão normal.
 	c.cancel()
 	c.wg.Wait()
 }

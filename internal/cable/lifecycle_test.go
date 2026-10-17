@@ -247,7 +247,7 @@ func TestCloseIsBoundedWhenThePeerGoesSilent(t *testing.T) {
 	conn.Close()
 	elapsed := time.Since(start)
 
-	if elapsed > 3*time.Second {
+	if elapsed > 2*time.Second {
 		t.Fatalf("Close levou %v", elapsed)
 	}
 	release() // libera o handler, que fecha a conexão dele
