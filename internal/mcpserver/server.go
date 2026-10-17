@@ -233,8 +233,8 @@ const (
 		"(padrão), espera por até 45 s um deploy em andamento terminar. Use depois de jatai_publicar responder " +
 		"\"em andamento\"."
 	logsDesc = "Linhas recentes do log do app em execução, uma por linha (hora [nível] mensagem), com filtro de " +
-		"texto opcional sobre as últimas 500 linhas; linhas com mais de 1000 caracteres saem cortadas. Use para investigar erro depois de publicado (página com erro " +
-		"500, app reiniciando)."
+		"texto opcional sobre as últimas 500 linhas; linhas com mais de 1000 caracteres saem cortadas. Use para " +
+		"investigar erro depois de publicado (página com erro 500, app reiniciando)."
 	listarDesc  = "Lista as chaves das variáveis de ambiente do app. Os valores nunca são mostrados."
 	definirDesc = "Define (cria ou altera) variáveis de ambiente do app. Valem no próximo deploy; use publicar=true " +
 		"para publicar em seguida. A resposta lista só as chaves, nunca os valores."
