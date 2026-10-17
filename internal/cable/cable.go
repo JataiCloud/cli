@@ -261,6 +261,14 @@ func (c *Conn) WaitFor(ctx context.Context, channel string, params map[string]an
 	if err != nil {
 		return "", err
 	}
+	return c.Await(ctx, id, channel, until, onLine, nil)
+}
+
+// Await é a espera do WaitFor numa assinatura já feita (id devolvido pelo
+// Subscribe): quem chama pode fazer algo entre assinar e esperar. onStatus
+// recebe os status dessa assinatura que ainda não estão em until. As mesmas
+// regras do WaitFor valem (uma espera por Conn).
+func (c *Conn) Await(ctx context.Context, id, channel string, until []string, onLine, onStatus func(string)) (string, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -283,8 +291,14 @@ func (c *Conn) WaitFor(ctx context.Context, channel string, params map[string]an
 				if e.message.Line != "" && onLine != nil {
 					onLine(e.message.Line)
 				}
-				if e.identifier == id && slices.Contains(until, e.message.Status) {
+				if e.identifier != id || e.message.Status == "" {
+					continue
+				}
+				if slices.Contains(until, e.message.Status) {
 					return e.message.Status, nil
+				}
+				if onStatus != nil {
+					onStatus(e.message.Status)
 				}
 			}
 		}

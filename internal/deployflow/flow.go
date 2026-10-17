@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -53,19 +54,32 @@ func (r *Runner) gitRemote(dir string) string {
 // cria com os dados do projeto. Depois de criar, grava o slug verdadeiro no
 // arquivo do projeto (projectPath).
 func (r *Runner) FindOrCreateApp(ctx context.Context, dir string, p config.Project, projectPath, guess string) (App, error) {
+	app, _, err := r.EnsureApp(ctx, dir, p, projectPath, guess)
+	return app, err
+}
+
+// EnsureApp é o FindOrCreateApp que também diz se criou o app (created) ou
+// achou um existente.
+func (r *Runner) EnsureApp(ctx context.Context, dir string, p config.Project, projectPath, guess string) (app App, created bool, err error) {
 	rep := r.reporter()
-	var app App
-	err := r.Client.Get(ctx, "/api/v1/apps/"+guess, nil, &app)
+	err = r.Client.Get(ctx, "/api/v1/apps/"+guess, nil, &app)
 	if err == nil {
 		rep.Info(fmt.Sprintf("App %s encontrado (%s).", app.Slug, app.Status))
 		if remote := r.gitRemote(dir); remote != "" {
 			_ = r.Client.Patch(ctx, "/api/v1/apps/"+app.Slug, map[string]any{"app": map[string]any{"repo_url": remote}}, nil)
 		}
-		return app, nil
+		return app, false, nil
 	}
 	if !api.IsStatus(err, http.StatusNotFound) {
-		return App{}, err
+		return App{}, false, err
 	}
+	app, err = r.createApp(ctx, dir, p, projectPath)
+	return app, err == nil, err
+}
+
+func (r *Runner) createApp(ctx context.Context, dir string, p config.Project, projectPath string) (App, error) {
+	rep := r.reporter()
+	var app App
 	rep.Info("Criando app " + p.DisplayName() + "...")
 	params := map[string]any{
 		"name": p.DisplayName(), "stack": p.Stack, "preset": p.Preset, "region": p.Region, "repo_branch": p.Branch,
@@ -180,13 +194,36 @@ func (r *Runner) requestProvision(ctx context.Context, slug string) error {
 // Reporter.Line) e cai no polling se ele não estiver disponível. Devolve o
 // status final: live, failed ou partially_live.
 func (r *Runner) WaitDeploy(ctx context.Context, slug string, id int, timeout time.Duration, maxPolls int) (string, error) {
+	return r.waitDeploy(ctx, slug, id, timeout, maxPolls, false)
+}
+
+// AwaitDeploy é o WaitDeploy para um deploy que outro processo soltou: logo
+// depois de assinar o WebSocket, consulta o status uma vez pela API, para não
+// esperar à toa por um deploy que terminou entre a consulta de quem chamou e
+// a assinatura (o WebSocket não repete o status final).
+func (r *Runner) AwaitDeploy(ctx context.Context, slug string, id int, timeout time.Duration, maxPolls int) (string, error) {
+	return r.waitDeploy(ctx, slug, id, timeout, maxPolls, true)
+}
+
+var deployFinal = []string{"live", "failed", "partially_live"}
+
+func (r *Runner) waitDeploy(ctx context.Context, slug string, id int, timeout time.Duration, maxPolls int, recheck bool) (string, error) {
 	params := map[string]any{"deploy_id": id}
-	final := []string{"live", "failed", "partially_live"}
 	status, err := r.Watch(ctx, timeout, func(wctx context.Context, conn *cable.Conn) (string, error) {
 		if _, err := conn.Subscribe(wctx, "DeployLogChannel", params); err != nil {
 			return "", err
 		}
-		return conn.WaitFor(wctx, "DeployStatusChannel", params, final, r.reporter().Line)
+		sid, err := conn.Subscribe(wctx, "DeployStatusChannel", params)
+		if err != nil {
+			return "", err
+		}
+		if recheck {
+			// Erro aqui não decide nada: o WebSocket continua esperando.
+			if st, err := r.deployStatus(wctx, slug, id); err == nil && slices.Contains(deployFinal, st) {
+				return st, nil
+			}
+		}
+		return conn.Await(wctx, sid, "DeployStatusChannel", deployFinal, r.reporter().Line, r.statusFunc())
 	})
 	if err == nil {
 		return status, nil
@@ -195,11 +232,24 @@ func (r *Runner) WaitDeploy(ctx context.Context, slug string, id int, timeout ti
 		return "", ctx.Err()
 	}
 	r.warnFallback(err)
-	return r.poll(ctx, maxPolls, final, func(ctx context.Context) (string, error) {
-		var d Deploy
-		err := r.Client.Get(ctx, fmt.Sprintf("/api/v1/apps/%s/deploys/%d", slug, id), nil, &d)
-		return d.Status, err
+	return r.poll(ctx, maxPolls, deployFinal, func(ctx context.Context) (string, error) {
+		return r.deployStatus(ctx, slug, id)
 	})
+}
+
+func (r *Runner) deployStatus(ctx context.Context, slug string, id int) (string, error) {
+	var d Deploy
+	err := r.Client.Get(ctx, fmt.Sprintf("/api/v1/apps/%s/deploys/%d", slug, id), nil, &d)
+	return d.Status, err
+}
+
+// statusFunc repassa os status intermediários do WebSocket a quem implementa
+// StatusReporter (o MCP); a CLI não os mostra, como na gem.
+func (r *Runner) statusFunc() func(string) {
+	if sr, ok := r.reporter().(StatusReporter); ok {
+		return sr.Status
+	}
+	return nil
 }
 
 // BuildLogTail devolve as últimas lines linhas do log do build do deploy.

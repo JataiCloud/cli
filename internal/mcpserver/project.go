@@ -7,10 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/jataicloud/cli/internal/config"
-	"github.com/jataicloud/cli/internal/deployflow"
 	"github.com/jataicloud/cli/internal/slug"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -39,10 +37,10 @@ func (s *state) createApp(ctx context.Context, req *mcp.CallToolRequest, in cria
 	if err != nil {
 		return toolError(err.Error())
 	}
-	rep := &creationReporter{}
 	cctx, cancel := context.WithTimeout(ctx, s.d.Budget)
 	defer cancel()
-	app, err := s.runner(c, rep).FindOrCreateApp(cctx, dir, hexBase(p), path, guess)
+	p.Branch = s.branchFor(dir, p) // repo_branch pela mesma regra do jatai_publicar
+	app, created, err := s.runner(c, nil).EnsureApp(cctx, dir, hexBase(p), path, guess)
 	if err != nil {
 		return toolError(s.explain(err))
 	}
@@ -50,7 +48,7 @@ func (s *state) createApp(ctx context.Context, req *mcp.CallToolRequest, in cria
 	if stack == "" {
 		stack = app.Stack
 	}
-	if !rep.created {
+	if !created {
 		return textResult(fmt.Sprintf("O app %s já existe no Jataí (stack %s, status %s). Próximo passo: jatai_publicar.",
 			app.Slug, stackLabel(stack), app.Status))
 	}
@@ -174,19 +172,3 @@ func (s *state) slugFor(ctx context.Context, req *mcp.CallToolRequest, pasta, ap
 	}
 	return s.appSlug(dir, "")
 }
-
-// creationReporter só descobre se o FindOrCreateApp criou o app ou achou um
-// existente; o resto do andamento não interessa ao jatai_criar_app.
-type creationReporter struct{ created bool }
-
-var _ deployflow.Reporter = (*creationReporter)(nil)
-
-func (r *creationReporter) Info(msg string) {
-	if strings.HasPrefix(strings.TrimSpace(msg), "Criando app") {
-		r.created = true
-	}
-}
-func (*creationReporter) Warn(string)                        {}
-func (*creationReporter) Line(string)                        {}
-func (*creationReporter) Step(string) func(string)           { return func(string) {} }
-func (*creationReporter) Polled(string, bool, time.Duration) {}

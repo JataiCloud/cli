@@ -47,15 +47,22 @@ func deployStatuses(m *mcpTest, statuses ...string) {
 	})
 }
 
-// gatedDeploy fica em building até live virar true.
+// gatedDeploy fica em building até live virar true; o GET do app mostra o
+// mesmo status no último deploy.
 func gatedDeploy(m *mcpTest) *atomic.Bool {
 	var live atomic.Bool
-	m.handle("GET /api/v1/apps/loja/deploys/7", func(w http.ResponseWriter, _ *http.Request) {
-		status := "building"
+	current := func() string {
 		if live.Load() {
-			status = "live"
+			return "live"
 		}
-		json.NewEncoder(w).Encode(map[string]any{"id": 7, "status": status})
+		return "building"
+	}
+	m.handle("GET /api/v1/apps/loja/deploys/7", func(w http.ResponseWriter, _ *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": 7, "status": current()})
+	})
+	m.handle("GET /api/v1/apps/loja", func(w http.ResponseWriter, _ *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": 1, "slug": "loja", "status": "active", "url": lojaURL,
+			"last_deploy": map[string]any{"id": 7, "status": current(), "created_at": "2026-10-16T14:03:00-03:00"}})
 	})
 	return &live
 }
@@ -86,11 +93,14 @@ func TestPublishAnswersInProgressAndKeepsDeploying(t *testing.T) {
 		t.Fatalf("%v %q", isErr, text)
 	}
 	live.Store(true)
+	// O resultado do job sai uma vez, para a primeira chamada que o vê
+	// terminado; se ele terminar entre duas chamadas e alguém já o tiver
+	// recebido, vale o resumo lido da API — os dois provam que o deploy seguiu.
 	status := waitFor(t, func() (string, bool) {
 		text, _ := m.call("jatai_status", map[string]any{"pasta": m.dir, "aguardar": true})
-		return text, strings.HasPrefix(text, "Publicado: ")
+		return text, strings.HasPrefix(text, "Publicado: ") || strings.Contains(text, "último deploy #7: live")
 	})
-	assertContains(t, status, "Publicado: "+lojaURL, "deploy #7")
+	assertContains(t, status, lojaURL, "#7")
 	if m.calls("POST /api/v1/apps/loja/deploys") != 1 {
 		t.Fatalf("deploys = %d", m.calls("POST /api/v1/apps/loja/deploys"))
 	}
@@ -487,5 +497,133 @@ func TestPublishWithAnExplicitAppUsesItWithoutWritingAProjectFile(t *testing.T) 
 	}
 	if m.calls("POST /api/v1/apps") != 0 {
 		t.Fatal("created an app for an explicit slug")
+	}
+}
+
+func TestStatusAfterTheJobEndedWithAnExpiredSessionReadsTheAPI(t *testing.T) {
+	m := newMCPTest(t)
+	lojaProject(t, m)
+	gatedDeploy(m)
+	m.call("jatai_publicar", map[string]any{"pasta": m.dir})
+	m.json("GET /api/v1/apps/loja/deploys/7", 401, map[string]any{"error": "token expirado"})
+
+	first := waitFor(t, func() (string, bool) {
+		text, _ := m.call("jatai_status", map[string]any{"pasta": m.dir})
+		return text, !strings.Contains(text, "em andamento")
+	})
+	assertContains(t, first, "O acompanhamento do deploy #7 de loja parou", "jatai_login")
+	m.login() // o agente chamou jatai_login
+	m.json("GET /api/v1/apps/loja", 200, map[string]any{"slug": "loja", "status": "active", "url": lojaURL,
+		"last_deploy": map[string]any{"id": 7, "status": "live", "created_at": "2026-10-16T14:03:00-03:00"}})
+
+	again, isErr := m.call("jatai_status", map[string]any{"pasta": m.dir})
+
+	if isErr || again != "App loja: active · "+lojaURL+" · último deploy #7: live (16/10/2026 14:03)" {
+		t.Fatalf("%v %q", isErr, again)
+	}
+}
+
+func TestAFinishedJobIsDeliveredOnceAndThenStatusReadsTheAPI(t *testing.T) {
+	m := newMCPTest(t)
+	lojaProject(t, m)
+	live := gatedDeploy(m)
+	m.call("jatai_publicar", map[string]any{"pasta": m.dir})
+	live.Store(true)
+	waitJobDone(t, m)
+
+	delivered, _ := m.call("jatai_status", map[string]any{"pasta": m.dir})
+	next, _ := m.call("jatai_status", map[string]any{"pasta": m.dir})
+
+	assertContains(t, delivered, "Publicado: "+lojaURL+"\nApp loja · deploy #7 · ")
+	if next != "App loja: active · "+lojaURL+" · último deploy #7: live (16/10/2026 14:03)" {
+		t.Fatalf("second status = %q", next)
+	}
+}
+
+// waitJobDone espera o job do app loja terminar.
+func waitJobDone(t *testing.T, m *mcpTest) {
+	t.Helper()
+	m.mu.Lock()
+	st := m.st
+	m.mu.Unlock()
+	j := st.jobFor("loja")
+	if j == nil {
+		t.Fatal("no job for loja")
+	}
+	select {
+	case <-j.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("job did not finish")
+	}
+}
+
+func TestPublishThatAnsweredTheResultIsNotRepeatedByStatus(t *testing.T) {
+	m := newMCPTest(t)
+	m.deps.Budget = 5 * time.Second
+	lojaProject(t, m)
+	deployStatuses(m, "live")
+	m.json("GET /api/v1/apps/loja", 200, map[string]any{"id": 1, "slug": "loja", "status": "active", "url": lojaURL})
+
+	m.call("jatai_publicar", map[string]any{"pasta": m.dir})
+	text, _ := m.call("jatai_status", map[string]any{"pasta": m.dir})
+
+	assertContains(t, text, "App loja: active")
+}
+
+func TestStatusAnswersWithinTheBudgetWhenTheLogIsSlow(t *testing.T) {
+	m := newMCPTest(t)
+	m.login()
+	m.json("GET /api/v1/apps/loja", 200, map[string]any{"slug": "loja", "status": "active", "url": lojaURL,
+		"last_deploy": map[string]any{"id": 9, "status": "failed"}})
+	m.handle("GET /api/v1/apps/loja/deploys/9/log", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(3 * time.Second):
+		}
+	})
+	start := time.Now()
+
+	text, _ := m.call("jatai_status", map[string]any{"app": "loja"})
+
+	assertContains(t, text, "último deploy #9: failed", logUnavailable)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("status took %v with a 200ms budget", elapsed)
+	}
+}
+
+func TestStatusAnswersAtOnceWhenTheDeployFinishedBeforeTheSubscription(t *testing.T) {
+	m := newMCPTest(t)
+	m.deps.Budget = 5 * time.Second
+	m.login()
+	m.mux.Handle("/cable", &cabletest.Handler{}) // nunca manda o status final
+	var finished atomic.Bool
+	m.handle("GET /api/v1/apps/loja", func(w http.ResponseWriter, _ *http.Request) {
+		status := "building"
+		if finished.Load() {
+			status = "live"
+		}
+		json.NewEncoder(w).Encode(map[string]any{"slug": "loja", "status": "active", "url": lojaURL,
+			"last_deploy": map[string]any{"id": 9, "status": status}})
+		finished.Store(true) // terminou logo depois da primeira leitura
+	})
+	m.json("GET /api/v1/apps/loja/deploys/9", 200, map[string]any{"id": 9, "status": "live"})
+	start := time.Now()
+
+	text, _ := m.call("jatai_status", map[string]any{"app": "loja"})
+
+	assertContains(t, text, "último deploy #9: live")
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("status took %v: it waited for the WebSocket", elapsed)
+	}
+}
+
+func TestProgressReporterMapsWebSocketStatusesToPhases(t *testing.T) {
+	j := newJob("loja", time.Now())
+	rep := &progressReporter{s: newState(Deps{}), job: j}
+
+	rep.Status("deploying")
+
+	if j.phase != "implantando" {
+		t.Fatalf("phase = %q", j.phase)
 	}
 }

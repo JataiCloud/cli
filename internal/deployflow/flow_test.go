@@ -14,6 +14,7 @@ import (
 	"github.com/jataicloud/cli/internal/api"
 	"github.com/jataicloud/cli/internal/cable"
 	"github.com/jataicloud/cli/internal/cable/cabletest"
+	"github.com/jataicloud/cli/internal/config"
 )
 
 type polled struct {
@@ -29,7 +30,11 @@ type recorder struct {
 	lines  []string
 	steps  []string
 	polled []polled
+	// statuses: os status intermediários vindos do WebSocket (StatusReporter).
+	statuses []string
 }
+
+func (r *recorder) Status(s string) { r.mu.Lock(); r.statuses = append(r.statuses, s); r.mu.Unlock() }
 
 func (r *recorder) Info(msg string) { r.mu.Lock(); r.infos = append(r.infos, msg); r.mu.Unlock() }
 func (r *recorder) Warn(msg string) { r.mu.Lock(); r.warns = append(r.warns, msg); r.mu.Unlock() }
@@ -188,5 +193,69 @@ func TestWaitDeployReturnsTheContextErrorWithoutFallingBackToPolling(t *testing.
 	}
 	if len(rec.warns) != 0 || len(rec.polled) != 0 {
 		t.Errorf("warns = %q, polled = %v", rec.warns, rec.polled)
+	}
+}
+
+func TestWaitDeployReportsIntermediateWebSocketStatuses(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/cable", &cabletest.Handler{Messages: map[string][]map[string]any{
+		"DeployStatusChannel": {{"status": "building"}, {"status": "deploying"}, {"status": "live"}},
+	}})
+	r, rec := newRunner(t, mux)
+
+	status, err := r.WaitDeploy(context.Background(), "loja", 7, time.Minute, 5)
+
+	if err != nil || status != "live" {
+		t.Fatalf("status = %q, err = %v", status, err)
+	}
+	if !reflect.DeepEqual(rec.statuses, []string{"building", "deploying"}) {
+		t.Errorf("statuses = %q", rec.statuses)
+	}
+}
+
+func TestAwaitDeployAnswersAtOnceWhenTheDeployFinishedBeforeTheSubscription(t *testing.T) {
+	mux := http.NewServeMux()
+	// O WebSocket nunca manda o status final: só a consulta logo depois de assinar resolve.
+	mux.Handle("/cable", &cabletest.Handler{})
+	mux.HandleFunc("GET /api/v1/apps/loja/deploys/7", func(w http.ResponseWriter, _ *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": 7, "status": "failed"})
+	})
+	r, rec := newRunner(t, mux)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	status, err := r.AwaitDeploy(ctx, "loja", 7, time.Minute, 5)
+
+	if err != nil || status != "failed" {
+		t.Fatalf("status = %q, err = %v", status, err)
+	}
+	if len(rec.warns) != 0 {
+		t.Errorf("warns = %q: it must not fall back to polling", rec.warns)
+	}
+}
+
+func TestEnsureAppSaysWhetherItCreatedTheApp(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/apps/loja", func(w http.ResponseWriter, _ *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": 1, "slug": "loja", "status": "active"})
+	})
+	mux.HandleFunc("GET /api/v1/apps/nova", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{"error": "não encontrado"})
+	})
+	mux.HandleFunc("POST /api/v1/apps", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"id": 2, "slug": "nova", "status": "pending"})
+	})
+	r, _ := newRunner(t, mux)
+	dir := t.TempDir()
+
+	app, created, err := r.EnsureApp(context.Background(), dir, config.Project{App: "loja"}, "", "loja")
+	if err != nil || created || app.Slug != "loja" {
+		t.Fatalf("existing: app = %+v, created = %v, err = %v", app, created, err)
+	}
+	app, created, err = r.EnsureApp(context.Background(), dir, config.Project{App: "nova"}, "", "nova")
+	if err != nil || !created || app.Slug != "nova" {
+		t.Fatalf("new: app = %+v, created = %v, err = %v", app, created, err)
 	}
 }

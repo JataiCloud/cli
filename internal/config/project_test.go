@@ -113,3 +113,11 @@ func TestNewProjectTrimsTheNameAndTreatsDetachedHeadAsMain(t *testing.T) {
 		t.Fatalf("branch = %q", p.Branch)
 	}
 }
+
+func TestNormalizeBranch(t *testing.T) {
+	for in, want := range map[string]string{"": "main", "HEAD": "main", " develop\n": "develop", "main": "main"} {
+		if got := NormalizeBranch(in); got != want {
+			t.Errorf("NormalizeBranch(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

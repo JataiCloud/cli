@@ -55,14 +55,20 @@ func NewProject(name, stack, branch string) (Project, error) {
 	if !ok {
 		return Project{}, ErrNoUsableName
 	}
-	branch = strings.TrimSpace(branch)
-	if branch == "" || branch == "HEAD" {
-		branch = "main"
-	}
 	return Project{
 		App: appSlug, Name: name, Stack: stack,
-		Preset: DefaultPreset, Region: DefaultRegion, Branch: branch,
+		Preset: DefaultPreset, Region: DefaultRegion, Branch: NormalizeBranch(branch),
 	}, nil
+}
+
+// NormalizeBranch apara a branch; vazia ou "HEAD" (o que o git responde com o
+// HEAD destacado) vira `main`.
+func NormalizeBranch(branch string) string {
+	branch = strings.TrimSpace(branch)
+	if branch == "" || branch == "HEAD" {
+		return "main"
+	}
+	return branch
 }
 
 // StackLabels: o rótulo de cada stack, como o painel mostra.

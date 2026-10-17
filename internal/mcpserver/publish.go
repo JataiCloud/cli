@@ -225,7 +225,10 @@ type progressReporter struct {
 	job *job
 }
 
-var _ deployflow.Reporter = (*progressReporter)(nil)
+var (
+	_ deployflow.Reporter       = (*progressReporter)(nil)
+	_ deployflow.StatusReporter = (*progressReporter)(nil)
+)
 
 func (r *progressReporter) Info(msg string) {
 	if r.s.debug() {
@@ -260,9 +263,14 @@ func (r *progressReporter) Step(msg string) func(string) {
 }
 
 func (r *progressReporter) Polled(status string, networkErr bool, _ time.Duration) {
-	if networkErr {
-		return
+	if !networkErr {
+		r.Status(status)
 	}
+}
+
+// Status recebe os status intermediários que chegam pelo WebSocket
+// (deployflow.StatusReporter); no polling, vêm pelo Polled.
+func (r *progressReporter) Status(status string) {
 	if phase, ok := deployPhases[status]; ok {
 		r.job.setPhase(phase)
 	}
@@ -332,10 +340,7 @@ func (s *state) publishTarget(ctx context.Context, req *mcp.CallToolRequest, in 
 		if err != nil && !errors.Is(err, config.ErrNoProject) {
 			return target{}, unreadableProject(path, err)
 		}
-		if p.Branch == "" {
-			p.Branch = s.gitBranch(dir)
-		}
-		return target{dir: dir, project: p, path: path, slug: sl, branch: branchOf(p), explicit: true}, nil
+		return s.newTarget(dir, p, path, sl, true), nil
 	}
 	p, path, err := s.ensureProject(dir, "", "")
 	if err != nil {
@@ -345,15 +350,21 @@ func (s *state) publishTarget(ctx context.Context, req *mcp.CallToolRequest, in 
 	if err != nil {
 		return target{}, err
 	}
-	return target{dir: dir, project: p, path: path, slug: sl, branch: branchOf(p)}, nil
+	return s.newTarget(dir, p, path, sl, false), nil
 }
 
-// branchOf: a do projeto; HEAD destacado ou nenhuma → main.
-func branchOf(p config.Project) string {
-	if strings.TrimSpace(p.Branch) == "HEAD" {
-		p.Branch = ""
+func (s *state) newTarget(dir string, p config.Project, path, sl string, explicit bool) target {
+	p.Branch = s.branchFor(dir, p) // também vai como repo_branch se o app for criado
+	return target{dir: dir, project: p, path: path, slug: sl, branch: p.Branch, explicit: explicit}
+}
+
+// branchFor: a branch do .jatai.yml; sem ela, a do git — as duas pela mesma
+// regra do NewProject (vazia ou HEAD destacado → main).
+func (s *state) branchFor(dir string, p config.Project) string {
+	if strings.TrimSpace(p.Branch) != "" {
+		return config.NormalizeBranch(p.Branch)
 	}
-	return deployflow.BranchOf(p, "")
+	return config.NormalizeBranch(s.gitBranch(dir))
 }
 
 // startOrJoin devolve o job em curso para o slug ou solta um novo.
@@ -378,6 +389,29 @@ func (s *state) jobFor(slug string) *job {
 	s.jobsMu.Lock()
 	defer s.jobsMu.Unlock()
 	return s.jobs[slug]
+}
+
+// dropJob tira o job do mapa (com o apelido do slug desambiguado, se houver).
+func (s *state) dropJob(j *job) {
+	s.jobsMu.Lock()
+	defer s.jobsMu.Unlock()
+	for k, v := range s.jobs {
+		if v == j {
+			delete(s.jobs, k)
+		}
+	}
+}
+
+// deliver é o texto do job para esta chamada. O resultado final sai uma vez
+// só: quem o vê terminado o recebe, e o job sai do mapa — dali em diante o
+// jatai_status lê a API, e um erro antigo (sessão expirada, 402) ou um
+// "Publicado" de uma hora atrás não volta.
+func (s *state) deliver(j *job) *mcp.CallToolResult {
+	v := j.view()
+	if v.done {
+		s.dropJob(j)
+	}
+	return s.resultOf(v)
 }
 
 func (s *state) runPublish(j *job, t target, c *api.Client) {
@@ -428,7 +462,7 @@ func (s *state) deploy(j *job, t target, c *api.Client) (string, error) {
 	case "partially_live":
 		j.setOutcome(s.processFailures(ctx, c, app.Slug, d.ID), "")
 	case "failed":
-		j.setOutcome(nil, s.buildTail(ctx, r, app.Slug, d.ID, j.recentLines()))
+		j.setOutcome(nil, s.buildTail(ctx, r, app.Slug, d.ID, j.recentLines(), sideCallTimeout))
 	}
 	return status, nil
 }
@@ -473,14 +507,19 @@ func (s *state) processFailures(ctx context.Context, c *api.Client, slug string,
 // buildTail são as últimas linhas do build, cortadas nos últimos maxLogChars
 // caracteres. Sem o log da API, valem as linhas que vieram pelo WebSocket;
 // sem nenhuma, o aviso de log indisponível — a resposta nunca falha por isso.
-func (s *state) buildTail(ctx context.Context, r *deployflow.Runner, slug string, id int, fallback []string) string {
-	lctx, cancel := context.WithTimeout(ctx, sideCallTimeout)
-	defer cancel()
-	lines, err := r.BuildLogTail(lctx, slug, id, buildLogLines)
-	if err != nil {
-		fmt.Fprintf(s.d.Log, "jatai mcp: não consegui ler o log do deploy #%d: %s\n", id, s.explain(err))
+func (s *state) buildTail(ctx context.Context, r *deployflow.Runner, slug string, id int, fallback []string,
+	timeout time.Duration) string {
+	var lines []string
+	if timeout > 0 {
+		lctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		var err error
+		lines, err = r.BuildLogTail(lctx, slug, id, buildLogLines)
+		if err != nil {
+			fmt.Fprintf(s.d.Log, "jatai mcp: não consegui ler o log do deploy #%d: %s\n", id, s.explain(err))
+		}
 	}
-	if err != nil || len(lines) == 0 {
+	if len(lines) == 0 {
 		lines = fallback
 	}
 	if len(lines) == 0 {
@@ -516,7 +555,7 @@ func (s *state) await(ctx context.Context, req *mcp.CallToolRequest, j *job, dea
 		}
 		for _, msg := range j.take(l) {
 			sent++
-			s.notify(ctx, req, token, sent, msg)
+			s.notify(ctx, req, token, sent, msg, deadline)
 		}
 	}
 	timer := time.NewTimer(time.Until(deadline))
@@ -527,12 +566,12 @@ func (s *state) await(ctx context.Context, req *mcp.CallToolRequest, j *job, dea
 			flush()
 		case <-j.done:
 			flush()
-			return s.jobResult(j)
+			return s.deliver(j)
 		case <-timer.C:
-			flush()
-			return s.jobResult(j)
+			// Prazo vencido: nada de notificação, a resposta sai já.
+			return s.deliver(j)
 		case <-ctx.Done():
-			return s.jobResult(j)
+			return s.deliver(j)
 		}
 	}
 }
@@ -544,8 +583,15 @@ func progressToken(req *mcp.CallToolRequest) any {
 	return req.Params.GetProgressToken()
 }
 
-func (s *state) notify(ctx context.Context, req *mcp.CallToolRequest, token any, progress float64, msg string) {
-	nctx, cancel := context.WithTimeout(ctx, notifyTimeout)
+// notify manda uma notificação de progresso com até notifyTimeout, sem passar
+// do prazo da chamada.
+func (s *state) notify(ctx context.Context, req *mcp.CallToolRequest, token any, progress float64, msg string,
+	deadline time.Time) {
+	limit := min(notifyTimeout, time.Until(deadline))
+	if limit <= 0 {
+		return
+	}
+	nctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	err := req.Session.NotifyProgress(nctx, &mcp.ProgressNotificationParams{
 		ProgressToken: token, Message: msg, Progress: progress,
@@ -555,9 +601,8 @@ func (s *state) notify(ctx context.Context, req *mcp.CallToolRequest, token any,
 	}
 }
 
-// jobResult é o texto que a IA lê sobre o job, terminado ou não.
-func (s *state) jobResult(j *job) *mcp.CallToolResult {
-	v := j.view()
+// resultOf é o texto que a IA lê sobre o job, terminado ou não.
+func (s *state) resultOf(v jobView) *mcp.CallToolResult {
 	switch {
 	case !v.done:
 		return textResult(inProgressText(v.slug, v.deployID, v.phase))
@@ -615,48 +660,55 @@ func (s *state) status(ctx context.Context, req *mcp.CallToolRequest, in statusI
 		return toolError(err.Error())
 	}
 	wait := in.Aguardar == nil || *in.Aguardar
+	// Job deste processo: em curso, ou terminado e ainda não entregue.
 	if j := s.jobFor(sl); j != nil {
 		if wait {
 			return s.await(ctx, req, j, deadline)
 		}
-		return s.jobResult(j)
+		return s.deliver(j)
 	}
+	// Sem job, tudo dentro do prazo da chamada.
+	cctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	var app deployflow.App
-	if err := c.Get(ctx, "/api/v1/apps/"+sl, nil, &app); err != nil {
+	if err := c.Get(cctx, "/api/v1/apps/"+sl, nil, &app); err != nil {
 		return toolError(s.explain(err))
 	}
 	if d := app.LastDeploy; wait && d != nil && deployPhases[d.Status] != "" {
-		if res := s.waitElsewhere(ctx, c, sl, d, deadline); res != nil {
+		if res := s.waitElsewhere(cctx, ctx, c, sl, d, deadline); res != nil {
 			return res
 		}
-		if err := c.Get(ctx, "/api/v1/apps/"+sl, nil, &app); err != nil {
+		if err := c.Get(cctx, "/api/v1/apps/"+sl, nil, &app); err != nil {
 			return toolError(s.explain(err))
 		}
 	}
 	if app.Slug == "" {
 		app.Slug = sl
 	}
-	return s.appSummary(ctx, c, app)
+	return s.appSummary(cctx, c, app, deadline)
 }
 
 // waitElsewhere espera, até o prazo, um deploy que este processo não soltou
 // (outro terminal, o painel, um servidor MCP reiniciado). nil = terminou.
-func (s *state) waitElsewhere(ctx context.Context, c *api.Client, slug string, d *deployflow.Deploy,
+// cctx já carrega o prazo; ctx é o da chamada, para distinguir prazo vencido
+// de chamada cancelada.
+func (s *state) waitElsewhere(cctx, ctx context.Context, c *api.Client, slug string, d *deployflow.Deploy,
 	deadline time.Time) *mcp.CallToolResult {
-	wctx, cancel := context.WithDeadline(ctx, deadline)
-	defer cancel()
-	_, err := s.runner(c, nil).WaitDeploy(wctx, slug, d.ID, time.Until(deadline), deployflow.UpDeployMaxPolls)
+	_, err := s.runner(c, nil).AwaitDeploy(cctx, slug, d.ID, time.Until(deadline), deployflow.UpDeployMaxPolls)
 	switch {
 	case err == nil:
 		return nil
-	case wctx.Err() != nil && ctx.Err() == nil:
+	case cctx.Err() != nil && ctx.Err() == nil:
 		return textResult(inProgressText(slug, d.ID, deployPhases[d.Status]))
 	default:
 		return toolError(s.explain(err))
 	}
 }
 
-func (s *state) appSummary(ctx context.Context, c *api.Client, app deployflow.App) *mcp.CallToolResult {
+// statusLogTimeout limita o log do build no jatai_status sem job.
+const statusLogTimeout = 5 * time.Second
+
+func (s *state) appSummary(ctx context.Context, c *api.Client, app deployflow.App, deadline time.Time) *mcp.CallToolResult {
 	head := fmt.Sprintf("App %s: %s · %s", app.Slug, app.Status, deployflow.AppURL(app))
 	d := app.LastDeploy
 	if d == nil {
@@ -667,7 +719,8 @@ func (s *state) appSummary(ctx context.Context, c *api.Client, app deployflow.Ap
 		head += " (" + when + ")"
 	}
 	if d.Status == "failed" {
-		return textResult(head + "\n" + failedBlock(s.buildTail(ctx, s.runner(c, nil), app.Slug, d.ID, nil)))
+		timeout := min(statusLogTimeout, time.Until(deadline))
+		return textResult(head + "\n" + failedBlock(s.buildTail(ctx, s.runner(c, nil), app.Slug, d.ID, nil, timeout)))
 	}
 	return textResult(head)
 }

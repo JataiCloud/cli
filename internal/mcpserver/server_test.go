@@ -37,6 +37,7 @@ type mcpTest struct {
 	mux      *http.ServeMux
 
 	session *mcp.ClientSession
+	st      *state
 }
 
 func newMCPTest(t *testing.T) *mcpTest {
@@ -99,6 +100,9 @@ func (m *mcpTest) connect() *mcp.ClientSession {
 		return m.session
 	}
 	st := newState(m.deps)
+	m.mu.Lock()
+	m.st = st
+	m.mu.Unlock()
 	srv := st.server()
 	if m.setup != nil {
 		m.setup(st, srv)

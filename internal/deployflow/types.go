@@ -64,6 +64,13 @@ type Reporter interface {
 	Polled(status string, networkErr bool, elapsed time.Duration)
 }
 
+// StatusReporter é opcional: o Reporter que o implementa recebe os status
+// intermediários do deploy que chegam pelo WebSocket (no polling, eles já vão
+// para Polled).
+type StatusReporter interface {
+	Status(status string)
+}
+
 // Runner reúne o que o fluxo usa do mundo externo, tudo injetável.
 type Runner struct {
 	Client       *api.Client
