@@ -23,7 +23,10 @@ import (
 // App reúne tudo o que os comandos usam do mundo externo — tudo injetável,
 // para cada comando ser testado contra um servidor falso.
 type App struct {
-	UI              *ui.UI
+	UI *ui.UI
+	// Stdin e Stdout crus: o `jatai mcp` fala o protocolo por eles.
+	Stdin           io.Reader
+	Stdout          io.Writer
 	Paths           config.Paths
 	Version         string
 	Getenv          func(string) string
@@ -47,7 +50,7 @@ type App struct {
 func NewApp(version string) *App {
 	paths, _ := config.DefaultPaths()
 	return &App{
-		UI: ui.New(), Paths: paths, Version: version, Getenv: os.Getenv, Getwd: os.Getwd, Now: time.Now,
+		UI: ui.New(), Stdin: os.Stdin, Stdout: os.Stdout, Paths: paths, Version: version, Getenv: os.Getenv, Getwd: os.Getwd, Now: time.Now,
 		Sleep: sleepCtx, RetryDelay: time.Second, PollInterval: 5 * time.Second,
 		ReconnectDelays: []time.Duration{time.Second, 3 * time.Second, 10 * time.Second},
 		WelcomeTimeout:  10 * time.Second, Git: runGit, Hostname: os.Hostname,

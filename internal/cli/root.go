@@ -30,9 +30,11 @@ func newRootCmd(a *App) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
-			if cmd.Name() != "update" {
-				a.maybeNotifyUpdate(cmd.Context())
+			// No mcp o stdout é do protocolo; logo após o update o aviso não faz sentido.
+			if cmd.Name() == "mcp" || cmd.Name() == "update" {
+				return
 			}
+			a.maybeNotifyUpdate(cmd.Context())
 		},
 	}
 	root.SetVersionTemplate("jatai {{.Version}}\n")
@@ -46,7 +48,7 @@ func newRootCmd(a *App) *cobra.Command {
 		},
 		newLoginCmd(a), newLogoutCmd(a), newInitCmd(a), newUpCmd(a), newDeployCmd(a),
 		newStatusCmd(a), newEnvCmd(a),
-		newLogsCmd(a), newLogsSearchCmd(a), newLogsExportCmd(a), newUpdateCmd(a),
+		newLogsCmd(a), newLogsSearchCmd(a), newLogsExportCmd(a), newUpdateCmd(a), newMCPCmd(a),
 	)
 	return root
 }

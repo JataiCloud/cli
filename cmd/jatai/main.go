@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/jataicloud/cli/internal/cli"
 )
@@ -12,7 +13,8 @@ import (
 var version = "dev"
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// SIGTERM é como os clientes MCP encerram o `jatai mcp`.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	// Depois do primeiro Ctrl-C, o segundo encerra na hora.
 	context.AfterFunc(ctx, stop)
 	code := cli.Main(ctx, version, os.Args[1:])
