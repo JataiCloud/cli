@@ -186,6 +186,46 @@ func TestEnvSetShowsTheAPIMessageWhenItEchoesNoValue(t *testing.T) {
 	}
 }
 
+func TestEnvSetKeepsTheConstantMessagesOfNon422StatusesEvenWithAShortValue(t *testing.T) {
+	m := newMCPTest(t)
+	lojaProject(t, m)
+	m.json("PUT /api/v1/apps/loja/env", 401, map[string]any{"error": "Sessão expirada: 1 vez só"})
+
+	text, isErr := m.call("jatai_variaveis_definir",
+		map[string]any{"pasta": m.dir, "variaveis": map[string]any{"DEBUG": "1"}})
+
+	if !isErr || text != errNotLoggedIn.Error() {
+		t.Fatalf("%v %q", isErr, text)
+	}
+}
+
+func TestEnvSetIgnoresShortValuesInTheEchoGuard(t *testing.T) {
+	m := newMCPTest(t)
+	lojaProject(t, m)
+	m.json("PUT /api/v1/apps/loja/env", 422, map[string]any{"errors": []string{"Limite de 100 variáveis por app"}})
+
+	// "10" aparece em "100", mas valores com menos de 4 caracteres não contam como eco.
+	text, isErr := m.call("jatai_variaveis_definir",
+		map[string]any{"pasta": m.dir, "variaveis": map[string]any{"WORKERS": "10"}})
+
+	if !isErr || text != "Limite de 100 variáveis por app." {
+		t.Fatalf("%v %q", isErr, text)
+	}
+}
+
+func TestEnvSetDoesNotApplyTheEchoGuardTo409WithALongValue(t *testing.T) {
+	m := newMCPTest(t)
+	lojaProject(t, m)
+	m.json("PUT /api/v1/apps/loja/env", 409, map[string]any{"error": "Deploy em andamento"})
+
+	text, isErr := m.call("jatai_variaveis_definir",
+		map[string]any{"pasta": m.dir, "variaveis": map[string]any{"MODE": "andamento"}})
+
+	if !isErr || text != "Deploy em andamento. Use jatai_status para acompanhar." {
+		t.Fatalf("%v %q", isErr, text)
+	}
+}
+
 func TestEnvUnsetReservedKeyExplains(t *testing.T) {
 	m := newMCPTest(t)
 	lojaProject(t, m)

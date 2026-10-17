@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -91,11 +92,17 @@ func cleanVariables(vars map[string]string) (map[string]string, error) {
 	return out, nil
 }
 
-// explainEnvSet é o explain do PUT: a mensagem da API só sai se não ecoar
-// nenhum dos valores enviados (a validação do servidor às vezes cita o valor).
+// minEchoLen é o menor valor que a guarda de eco considera: "1" ou "on" estão
+// em qualquer frase e esconderiam mensagens que não ecoam nada.
+const minEchoLen = 4
+
+// explainEnvSet é o explain do PUT: num 422 (a validação do servidor às vezes
+// cita o valor), a mensagem da API só sai se não ecoar nenhum dos valores
+// enviados. As demais mensagens (401, 402, 409, 426…) são constantes do
+// servidor e chegam à IA como estão.
 func explainEnvSet(s *state, err error, env map[string]string) string {
 	var apiErr *api.Error
-	if errors.As(err, &apiErr) && echoesValue(apiErr, env) {
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnprocessableEntity && echoesValue(apiErr, env) {
 		return refusedEnv
 	}
 	return s.explain(err)
@@ -103,7 +110,7 @@ func explainEnvSet(s *state, err error, env map[string]string) string {
 
 func echoesValue(e *api.Error, env map[string]string) bool {
 	for _, v := range env {
-		if v != "" && strings.Contains(e.Message, v) {
+		if len(v) >= minEchoLen && strings.Contains(e.Message, v) {
 			return true
 		}
 	}

@@ -261,6 +261,32 @@ func TestEveryToolDescribesItselfAndAcceptsPastaAndApp(t *testing.T) {
 	}
 }
 
+func TestEnvToolSchemasSayValuesAreStrings(t *testing.T) {
+	want := map[string][]string{
+		"jatai_variaveis_definir": {"variaveis", "string", `"3000"`, "^[A-Z][A-Z0-9_]*$", "100"},
+		"jatai_variaveis_remover": {"chaves", "string", "^[A-Z][A-Z0-9_]*$"},
+	}
+	for _, tool := range newMCPTest(t).tools() {
+		if _, ok := want[tool.Name]; !ok {
+			continue
+		}
+		schema, _ := tool.InputSchema.(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		field := want[tool.Name][0]
+		prop, _ := props[field].(map[string]any)
+		desc, _ := prop["description"].(string)
+		assertContains(t, desc, want[tool.Name][1:]...)
+	}
+}
+
+func TestLogsDescriptionMentionsTheLineCut(t *testing.T) {
+	for _, tool := range newMCPTest(t).tools() {
+		if tool.Name == "jatai_logs" {
+			assertContains(t, tool.Description, "1000 caracteres")
+		}
+	}
+}
+
 func TestOnlyVariablesAndKeysAreRequired(t *testing.T) {
 	want := map[string][]string{"jatai_variaveis_definir": {"variaveis"}, "jatai_variaveis_remover": {"chaves"}}
 	for _, tool := range newMCPTest(t).tools() {

@@ -204,14 +204,14 @@ type listarInput struct {
 type definirInput struct {
 	Pasta     string            `json:"pasta,omitempty" jsonschema:"Caminho absoluto da pasta do projeto (padrão: o diretório de trabalho do servidor)."`
 	App       string            `json:"app,omitempty" jsonschema:"Slug do app no Jataí (padrão: o do .jatai.yml da pasta)."`
-	Variaveis map[string]string `json:"variaveis" jsonschema:"Variáveis a definir, no formato CHAVE: valor."`
+	Variaveis map[string]string `json:"variaveis" jsonschema:"Variáveis a definir, no formato {\"CHAVE\": \"valor\"}. Todo valor é uma string, sempre entre aspas (por exemplo \"3000\", não 3000; \"true\", não true). Chaves no formato ^[A-Z][A-Z0-9_]*$ (maiúsculas, números e sublinhado, começando por letra), no máximo 100 por chamada."`
 	Publicar  bool              `json:"publicar,omitempty" jsonschema:"Publicar de novo logo em seguida, para os valores valerem já (padrão: false)."`
 }
 
 type removerInput struct {
 	Pasta    string   `json:"pasta,omitempty" jsonschema:"Caminho absoluto da pasta do projeto (padrão: o diretório de trabalho do servidor)."`
 	App      string   `json:"app,omitempty" jsonschema:"Slug do app no Jataí (padrão: o do .jatai.yml da pasta)."`
-	Chaves   []string `json:"chaves" jsonschema:"Chaves das variáveis a remover."`
+	Chaves   []string `json:"chaves" jsonschema:"Chaves das variáveis a remover: strings no formato ^[A-Z][A-Z0-9_]*$ (por exemplo [\"API_KEY\"])."`
 	Publicar bool     `json:"publicar,omitempty" jsonschema:"Publicar de novo logo em seguida, para a remoção valer já (padrão: false)."`
 }
 
@@ -233,7 +233,7 @@ const (
 		"(padrão), espera por até 45 s um deploy em andamento terminar. Use depois de jatai_publicar responder " +
 		"\"em andamento\"."
 	logsDesc = "Linhas recentes do log do app em execução, uma por linha (hora [nível] mensagem), com filtro de " +
-		"texto opcional sobre as últimas 500 linhas. Use para investigar erro depois de publicado (página com erro " +
+		"texto opcional sobre as últimas 500 linhas; linhas com mais de 1000 caracteres saem cortadas. Use para investigar erro depois de publicado (página com erro " +
 		"500, app reiniciando)."
 	listarDesc  = "Lista as chaves das variáveis de ambiente do app. Os valores nunca são mostrados."
 	definirDesc = "Define (cria ou altera) variáveis de ambiente do app. Valem no próximo deploy; use publicar=true " +
