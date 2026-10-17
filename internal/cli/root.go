@@ -3,9 +3,11 @@ package cli
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/jataicloud/cli/internal/api"
+	"github.com/jataicloud/cli/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -22,11 +24,12 @@ func Run(ctx context.Context, a *App, args []string) int {
 
 func newRootCmd(a *App) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "jatai",
-		Short:         "CLI da Jataí — deploy na nuvem brasileira",
-		Version:       a.Version,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:               "jatai",
+		Short:             "CLI da Jataí — deploy na nuvem brasileira",
+		Version:           a.Version,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		PersistentPostRun: func(cmd *cobra.Command, _ []string) { a.maybeNotifyUpdate(cmd.Context()) },
 	}
 	root.SetVersionTemplate("jatai {{.Version}}\n")
 	root.SetOut(a.UI.Out)
@@ -39,7 +42,7 @@ func newRootCmd(a *App) *cobra.Command {
 		},
 		newLoginCmd(a), newLogoutCmd(a), newInitCmd(a), newUpCmd(a), newDeployCmd(a),
 		newStatusCmd(a), newEnvCmd(a),
-		newLogsCmd(a), newLogsSearchCmd(a), newLogsExportCmd(a),
+		newLogsCmd(a), newLogsSearchCmd(a), newLogsExportCmd(a), newUpdateCmd(a),
 	)
 	return root
 }
@@ -67,6 +70,9 @@ func (a *App) report(err error) int {
 		return 130
 	case errors.As(err, &apiErr):
 		a.UI.Error("Erro: " + apiErr.Message)
+		if apiErr.Status == http.StatusUpgradeRequired {
+			a.UI.Error("Nesta máquina, atualize com: " + update.Hint(a.installMethod()))
+		}
 		return 1
 	default:
 		a.UI.Error(msg)

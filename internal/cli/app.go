@@ -17,6 +17,7 @@ import (
 	"github.com/jataicloud/cli/internal/config"
 	"github.com/jataicloud/cli/internal/slug"
 	"github.com/jataicloud/cli/internal/ui"
+	"github.com/jataicloud/cli/internal/update"
 )
 
 // App reúne tudo o que os comandos usam do mundo externo — tudo injetável,
@@ -38,6 +39,9 @@ type App struct {
 	Hostname        func() (string, error)
 	OpenBrowser     func(url string) error
 	CanOpenBrowser  func() bool
+	Executable      func() (string, error)
+	LatestVersion   func(context.Context) (string, error)
+	DownloadBase    string
 }
 
 func NewApp(version string) *App {
@@ -49,7 +53,19 @@ func NewApp(version string) *App {
 		WelcomeTimeout:  10 * time.Second, Git: runGit, Hostname: os.Hostname,
 		OpenBrowser:    auth.OpenBrowser,
 		CanOpenBrowser: func() bool { return auth.CanOpenBrowser(os.Getenv) },
+		Executable:     os.Executable,
+		DownloadBase:   "https://github.com/jataicloud/cli/releases/download",
+		LatestVersion: func(ctx context.Context) (string, error) {
+			return update.Latest(ctx, http.DefaultClient, "https://api.github.com")
+		},
 	}
+}
+
+func (a *App) httpClient() *http.Client {
+	if a.HTTP != nil {
+		return a.HTTP
+	}
+	return http.DefaultClient
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) error {

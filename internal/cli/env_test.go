@@ -52,6 +52,8 @@ func newTestEnv(t *testing.T) *testEnv {
 		Hostname:        func() (string, error) { return "maquina-teste", nil },
 		OpenBrowser:     func(string) error { return nil },
 		CanOpenBrowser:  func() bool { return false },
+		Executable:      func() (string, error) { return "/usr/local/bin/jatai", nil },
+		LatestVersion:   func(context.Context) (string, error) { return "2.0.0", nil },
 	}
 	return e
 }
