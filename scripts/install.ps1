@@ -6,10 +6,28 @@ $ProgressPreference = 'SilentlyContinue'
 $Repo = 'jataicloud/cli'
 $InstallDir = if ($env:JATAI_INSTALL_DIR) { $env:JATAI_INSTALL_DIR } else { Join-Path $HOME '.jatai\bin' }
 
+# Windows PowerShell 5.1 em máquina antiga pode não oferecer TLS 1.2 por padrão.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+# A última versão sai do redirecionamento de /releases/latest (como no
+# install.sh), não da API do GitHub, que limita 60 consultas por hora por IP:
+# numa sala de aula, todos saem pelo mesmo IP.
+function Get-LatestVersion {
+  $Request = [System.Net.WebRequest]::Create('https://github.com/JataiCloud/cli/releases/latest')
+  $Request.Method = 'HEAD'
+  $Request.AllowAutoRedirect = $false
+  $Response = $Request.GetResponse()
+  try { $Location = $Response.Headers['Location'] } finally { $Response.Close() }
+  if (-not $Location -or $Location -notmatch '/tag/v?([^/?#]+)$') {
+    throw 'Não consegui descobrir a última versão da CLI. Defina JATAI_VERSION (por exemplo, 2.0.0) e rode de novo.'
+  }
+  return $Matches[1]
+}
+
 if ($env:JATAI_VERSION) {
   $Version = $env:JATAI_VERSION.TrimStart('v')
 } else {
-  $Version = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest").tag_name.TrimStart('v')
+  $Version = Get-LatestVersion
 }
 
 $Archive = "jatai_${Version}_windows_amd64.zip"

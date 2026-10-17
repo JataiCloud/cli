@@ -27,7 +27,8 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # A mesma versão do ambiente local: `latest` mudaria as regras sem aviso.
+          version: v2.13.2
       - run: shellcheck scripts/install.sh scripts/smoke.sh
 
   release-config:

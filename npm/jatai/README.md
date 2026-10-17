@@ -19,9 +19,11 @@ O `jatai mcp` expõe a plataforma a agentes por stdio. Num cliente MCP:
 
     {
       "mcpServers": {
-        "jatai": { "command": "npx", "args": ["-y", "jatai", "mcp"] }
+        "jatai": { "command": "npx", "args": ["-y", "jatai@latest", "mcp"] }
       }
     }
+
+Passo a passo para Claude Code, Cursor, Codex e Gemini: https://jataicloud.com.br/docs/ia
 
 ## Problemas na instalação
 
@@ -29,4 +31,4 @@ O binário vem de pacotes opcionais (`@jataicloud/cli-*`). Não instale com `--o
 
     curl -fsSL https://jataicloud.com.br/install.sh | sh
 
-Documentação: https://jataicloud.com.br/docs/quickstart · Código: https://github.com/JataiCloud/cli
+Documentação: https://jataicloud.com.br/docs/ia · Código: https://github.com/JataiCloud/cli

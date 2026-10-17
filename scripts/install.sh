@@ -17,7 +17,7 @@ detect_os() {
   case "$(uname -s)" in
     Darwin) echo "darwin" ;;
     Linux) echo "linux" ;;
-    *) fail "sistema não suportado: $(uname -s). No Windows: scoop install jatai" ;;
+    *) fail "sistema não suportado: $(uname -s). No Windows, pelo Scoop: scoop bucket add jataicloud https://github.com/JataiCloud/scoop-bucket && scoop install jatai — ou no PowerShell: irm https://jataicloud.com.br/install.ps1 | iex" ;;
   esac
 }
 

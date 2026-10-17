@@ -72,9 +72,13 @@ func Hint(m Method) string {
 	}
 }
 
+// Newer compara como o SemVer: o núcleo (maior.menor.correção) primeiro; no
+// mesmo núcleo, a versão final é mais nova que qualquer pré-lançamento
+// (2.0.0 > 2.0.0-rc.3), e os pré-lançamentos se comparam por partes, com as
+// numéricas como números (rc.10 > rc.9).
 func Newer(latest, current string) bool {
-	l, okL := parse(latest)
-	c, okC := parse(current)
+	l, lPre, okL := parse(latest)
+	c, cPre, okC := parse(current)
 	if !okL || !okC {
 		return false
 	}
@@ -83,24 +87,61 @@ func Newer(latest, current string) bool {
 			return l[i] > c[i]
 		}
 	}
-	return false
+	return comparePrerelease(lPre, cPre) > 0
 }
 
-func parse(v string) ([3]int, bool) {
+func parse(v string) ([3]int, string, bool) {
 	var out [3]int
-	parts := strings.SplitN(strings.TrimPrefix(v, "v"), ".", 3)
+	v, _, _ = strings.Cut(strings.TrimPrefix(v, "v"), "+")
+	core, pre, _ := strings.Cut(v, "-")
+	parts := strings.Split(core, ".")
 	if len(parts) != 3 {
-		return out, false
+		return out, "", false
 	}
 	for i, part := range parts {
-		part, _, _ = strings.Cut(part, "-")
 		n, err := strconv.Atoi(part)
-		if err != nil {
-			return out, false
+		if err != nil || n < 0 {
+			return out, "", false
 		}
 		out[i] = n
 	}
-	return out, true
+	return out, pre, true
+}
+
+// comparePrerelease devolve >0 se a for mais novo que b. Vazio (versão
+// final) vence qualquer pré-lançamento.
+func comparePrerelease(a, b string) int {
+	switch {
+	case a == b:
+		return 0
+	case a == "":
+		return 1
+	case b == "":
+		return -1
+	}
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if c := compareIdentifier(as[i], bs[i]); c != 0 {
+			return c
+		}
+	}
+	return len(as) - len(bs)
+}
+
+// compareIdentifier: numéricos como números e antes dos alfanuméricos.
+func compareIdentifier(a, b string) int {
+	an, aErr := strconv.Atoi(a)
+	bn, bErr := strconv.Atoi(b)
+	switch {
+	case aErr == nil && bErr == nil:
+		return an - bn
+	case aErr == nil:
+		return -1
+	case bErr == nil:
+		return 1
+	default:
+		return strings.Compare(a, b)
+	}
 }
 
 // ArchiveName é o nome do pacote publicado nas releases do JataiCloud/cli.

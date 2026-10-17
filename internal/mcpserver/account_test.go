@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jataicloud/cli/internal/api"
+	"github.com/jataicloud/cli/internal/config"
 	"github.com/jataicloud/cli/internal/deployflow"
 )
 
@@ -83,8 +84,8 @@ func TestLoginSecondCallSavesTheTokenWithoutPrintingIt(t *testing.T) {
 
 	text, isErr := m.call("jatai_login", nil)
 
-	assertContains(t, text, "Logado como Ana (ana@x.com)", "jatai_conta", signupHint)
-	assertMissing(t, text, "jat_secret", "dev_secret_123")
+	assertContains(t, text, "Logado como Ana (ana@x.com)", "jatai_conta")
+	assertMissing(t, text, "jat_secret", "dev_secret_123", signupHint)
 	if isErr || m.savedToken() != "jat_secret" {
 		t.Fatalf("isErr = %v, token not saved", isErr)
 	}
@@ -117,8 +118,8 @@ func TestLoginExpiredCodeStartsOverOnTheNextCall(t *testing.T) {
 	m.call("jatai_login", nil)
 
 	text, isErr := m.call("jatai_login", nil)
-	assertContains(t, text, "expirou", "jatai_login de novo", signupHint)
-	assertMissing(t, text, "jatai login`")
+	assertContains(t, text, "expirou", "jatai_login de novo")
+	assertMissing(t, text, "jatai login`", signupHint)
 	if !isErr {
 		t.Fatal("expired login should be an error")
 	}
@@ -138,7 +139,8 @@ func TestLoginDeniedInTheBrowserDiscardsThePendingCode(t *testing.T) {
 
 	text, isErr := m.call("jatai_login", nil)
 
-	assertContains(t, text, "recusado", "jatai_login de novo", signupHint)
+	assertContains(t, text, "recusado", "jatai_login de novo")
+	assertMissing(t, text, signupHint)
 	if !isErr {
 		t.Fatal("denied login should be an error")
 	}
@@ -152,7 +154,8 @@ func TestLoginWhenAlreadyLoggedInOnlySaysWho(t *testing.T) {
 
 	text, isErr := m.call("jatai_login", nil)
 
-	assertContains(t, text, "Já está logado como Ana (ana@x.com)", signupHint)
+	assertContains(t, text, "Já está logado como Ana (ana@x.com)")
+	assertMissing(t, text, signupHint)
 	if isErr || m.calls("POST /api/v1/cli/device_authorizations") != 0 {
 		t.Fatalf("isErr = %v, device authorizations = %d", isErr, m.calls("POST /api/v1/cli/device_authorizations"))
 	}
@@ -443,5 +446,23 @@ func TestPackageExplainNamesTheFailingHost(t *testing.T) {
 
 	if got != "Sem conexão com a API do Jataí ("+base+"). Tente de novo em instantes." {
 		t.Fatalf("%q (err %v)", got, err)
+	}
+}
+
+func TestLoginWithoutAHomeDirectoryDoesNotWriteTheTokenIntoTheProject(t *testing.T) {
+	m := newMCPTest(t)
+	m.deps.Paths = config.Paths{}
+	t.Chdir(m.dir)
+	m.json("POST /api/v1/cli/device_authorizations", 201, deviceStart())
+	m.call("jatai_login", nil)
+	m.json("POST /api/v1/cli/device_authorizations/token", 200,
+		map[string]any{"token": "jat_secret", "user": map[string]any{"name": "Ana", "email": "ana@x.com"}})
+
+	text, isErr := m.call("jatai_login", nil)
+
+	assertContains(t, text, "Login aprovado, mas a credencial não foi gravada.", "HOME")
+	assertMissing(t, text, "jat_secret")
+	if _, err := os.Stat(filepath.Join(m.dir, ".jatai")); !isErr || err == nil {
+		t.Fatalf("isErr = %v, .jatai created in the working directory: %v", isErr, err)
 	}
 }

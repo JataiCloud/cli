@@ -7,7 +7,9 @@ Deploy de apps Rails, Node.js, sites estáticos ou qualquer Dockerfile na nuvem 
 - macOS e Linux: `curl -fsSL https://jataicloud.com.br/install.sh | sh`
 - macOS (Homebrew): `brew install jataicloud/tap/jatai`
 - npm: `npx jatai` ou `npm install -g jatai` (o binário vem de pacotes `@jataicloud/cli-*`; não use `--omit=optional`)
-- Windows (Scoop): `scoop bucket add jataicloud https://github.com/jataicloud/scoop-bucket` e `scoop install jatai`
+- Windows (Scoop): `scoop bucket add jataicloud https://github.com/JataiCloud/scoop-bucket` e `scoop install jatai`
+- Windows (PowerShell): `irm https://jataicloud.com.br/install.ps1 | iex`
+- Do código-fonte (Go 1.27+): `go install github.com/jataicloud/cli/cmd/jatai@latest`, ou `go build -o jatai ./cmd/jatai` num clone deste repositório
 
 ## Uso
 
@@ -15,7 +17,19 @@ Deploy de apps Rails, Node.js, sites estáticos ou qualquer Dockerfile na nuvem 
     jatai init
     jatai up
 
-Documentação: https://jataicloud.com.br/docs/quickstart
+## Jataí + IA (MCP)
+
+O `jatai mcp` é um servidor MCP local (stdio): agentes como Claude Code, Cursor, Codex e Gemini publicam a pasta do projeto, acompanham o deploy, leem os logs e cuidam das variáveis de ambiente. Num cliente MCP:
+
+    {
+      "mcpServers": {
+        "jatai": { "command": "npx", "args": ["-y", "jatai@latest", "mcp"] }
+      }
+    }
+
+Configuração de cada agente (inclusive no Windows): https://jataicloud.com.br/docs/ia
+
+Documentação: https://jataicloud.com.br/docs/ia
 
 ## Contrato com o servidor
 

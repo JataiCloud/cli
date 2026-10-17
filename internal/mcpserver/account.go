@@ -147,16 +147,13 @@ func (p *pendingLogin) link() string {
 }
 
 func (p *pendingLogin) waitingText() string {
-	return "Ainda aguardando a aprovação de " + p.start.UserCode + " em " + p.link() + ". Chame jatai_login de novo."
+	return "Ainda aguardando a aprovação de " + p.start.UserCode + " em " + p.link() + ". Chame jatai_login de novo." +
+		"\n" + signupHint
 }
 
+// signupHint vai só nos textos com o link ou a espera da aprovação: é quando
+// o aluno sem conta trava. Logado, expirado ou recusado não precisam dele.
 const signupHint = "Ainda não tem conta? Crie em https://jataicloud.com.br e confirme o e-mail antes de aprovar."
-
-func withSignup(res *mcp.CallToolResult) *mcp.CallToolResult {
-	tc := res.Content[0].(*mcp.TextContent)
-	tc.Text += "\n" + signupHint
-	return res
-}
 
 // login em duas chamadas, para nunca prender o agente: a primeira devolve na
 // hora o link e o código; a seguinte espera a aprovação por até Budget.
@@ -165,19 +162,19 @@ func (s *state) login(ctx context.Context, _ *mcp.CallToolRequest, _ loginInput)
 	// ficar presa atrás da outra além do tempo limite do cliente.
 	if !s.loginMu.TryLock() {
 		if p := s.pending.Load(); p != nil {
-			return withSignup(textResult(p.waitingText()))
+			return textResult(p.waitingText())
 		}
-		return withSignup(textResult("Um login já está começando. Chame jatai_login de novo em instantes."))
+		return textResult("Um login já está começando. Chame jatai_login de novo em instantes.\n" + signupHint)
 	}
 	defer s.loginMu.Unlock()
 	if res, done := s.alreadyLoggedIn(ctx); done {
-		return withSignup(res)
+		return res
 	}
 	if p := s.pending.Load(); p != nil && (p.expires.IsZero() || s.d.Now().Before(p.expires)) {
-		return withSignup(s.awaitApproval(ctx, p))
+		return s.awaitApproval(ctx, p)
 	}
 	// Sem código, ou com um que já venceu: começa outro na hora.
-	return withSignup(s.beginLogin(ctx))
+	return s.beginLogin(ctx)
 }
 
 // alreadyLoggedIn confere o token salvo em /api/v1/account. Token recusado
@@ -226,7 +223,7 @@ func (s *state) beginLogin(ctx context.Context) *mcp.CallToolResult {
 	}
 	s.pending.Store(p)
 	text := "Peça ao usuário para abrir " + p.link() + " e aprovar o código " + start.UserCode +
-		"; depois chame jatai_login de novo."
+		"; depois chame jatai_login de novo.\n" + signupHint
 	if s.d.CanOpenBrowser() {
 		if err := s.d.OpenBrowser(p.link()); err == nil {
 			text = "O navegador desta máquina foi aberto na página de aprovação. " + text
@@ -248,7 +245,9 @@ func (s *state) awaitApproval(ctx context.Context, p *pendingLogin) *mcp.CallToo
 	switch {
 	case err == nil:
 		s.pending.Store(nil)
-		if err := config.SaveToken(s.d.Paths, grant.Token); err != nil {
+		if err := config.SaveToken(s.d.Paths, grant.Token); errors.Is(err, config.ErrNoHome) {
+			return toolError("Login aprovado, mas a credencial não foi gravada. " + err.Error())
+		} else if err != nil {
 			return toolError("Login aprovado, mas não foi possível gravar a credencial em " +
 				s.d.Paths.CredentialsFile() + ": " + err.Error())
 		}
