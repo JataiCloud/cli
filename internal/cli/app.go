@@ -99,7 +99,6 @@ func (a *App) debugWriter() io.Writer {
 	return nil
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func (a *App) authedClient() (*api.Client, error) {
 	token := config.Token(a.Paths, a.Getenv)
 	if token == "" {
@@ -108,7 +107,6 @@ func (a *App) authedClient() (*api.Client, error) {
 	return a.client(token)
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func (a *App) currentProject() (config.Project, string, error) {
 	dir, err := a.Getwd()
 	if err != nil {
@@ -121,7 +119,6 @@ func (a *App) currentProject() (config.Project, string, error) {
 	return p, path, err
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func (a *App) appSlug(p config.Project) (string, error) {
 	s, ok := slug.From(p.App)
 	if !ok {
