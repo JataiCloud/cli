@@ -1,0 +1,52 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+
+      - name: Avisar se Homebrew e Scoop vão ficar de fora
+        if: env.TAP_GITHUB_TOKEN == ''
+        run: echo "::warning::TAP_GITHUB_TOKEN ausente. A release sai sem Homebrew e Scoop (os binários seguem)."
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Vazio ou ausente: o .goreleaser.yaml pula o cask e o manifesto Scoop.
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      # Confere que nomes, checksums e o
+      # binário na raiz dos pacotes batem com o que `jatai update` e os
+      # instaladores esperam.
+      - name: Conferir os pacotes gerados
+        run: go test ./internal/update -run 'Goreleaser|BuiltArchives' -count=1
+        env:
+          JATAI_DIST_DIR: dist
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt

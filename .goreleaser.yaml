@@ -1,0 +1,72 @@
+version: 2
+project_name: jatai
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: jatai
+    main: ./cmd/jatai
+    binary: jatai
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+# O nome do pacote e o binário na raiz do arquivo são um contrato com
+# internal/update (ArchiveName e extract) e com scripts/install.*: não mudar
+# um sem o outro (archive_contract_test.go confere).
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  extra_files:
+    - glob: ./scripts/install.sh
+    - glob: ./scripts/install.ps1
+
+# Sem TAP_GITHUB_TOKEN (variável ausente ou vazia) o GoReleaser não publica no
+# Homebrew nem no Scoop, mas segue com binários e npm. Ver README, "Release".
+homebrew_casks:
+  - name: jatai
+    repository:
+      owner: JataiCloud
+      name: homebrew-tap
+      token: '{{ index .Env "TAP_GITHUB_TOKEN" }}'
+    skip_upload: '{{ if not (index .Env "TAP_GITHUB_TOKEN") }}true{{ end }}'
+    directory: Casks
+    homepage: https://jataicloud.com.br
+    description: CLI da Jataí — deploy na nuvem brasileira
+    # Sem notarização (fora de escopo), o macOS bloquearia o binário baixado.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/jatai"]
+          end
+
+scoops:
+  - name: jatai
+    repository:
+      owner: JataiCloud
+      name: scoop-bucket
+      token: '{{ index .Env "TAP_GITHUB_TOKEN" }}'
+    skip_upload: '{{ if not (index .Env "TAP_GITHUB_TOKEN") }}true{{ end }}'
+    homepage: https://jataicloud.com.br
+    description: CLI da Jataí — deploy na nuvem brasileira
+    license: MIT

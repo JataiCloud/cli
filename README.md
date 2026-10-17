@@ -23,3 +23,12 @@ Documentação: https://jataicloud.com.br/docs/quickstart
     CLI_FIXTURES_DIR=<este repositório>/internal/cli/testdata/api bundle exec rspec spec/requests/api/v1 --order defined
 
 `go test ./...` confere que cada resposta traz o que a CLI lê (`internal/cli`, `internal/mcpserver` e `internal/deployflow` têm um `contract_test.go`). Regenere antes de cada release e revise os arquivos (o repositório é público).
+
+## Release
+
+Uma tag `vX.Y.Z` (ou `vX.Y.Z-rc.N`) dispara `.github/workflows/release.yml`: testes, GoReleaser (pacotes `jatai_<versão>_<os>_<arch>.tar.gz`, `.zip` no Windows, `checksums.txt`, `install.sh` e `install.ps1`), e conferência dos pacotes.
+
+- Os pacotes têm o binário na raiz e esse nome é um contrato com `jatai update` e com os instaladores (`internal/update/release_contract_test.go` confere o `.goreleaser.yaml`).
+- Tags `-rc.N` são releases normais do GitHub, sem marca de pré-lançamento, para que `/releases/latest` (usado por `install.sh`, `install.ps1` e `jatai update`) tenha o que devolver antes da v2.0.0.
+- Segredo: `TAP_GITHUB_TOKEN` (escrita em `JataiCloud/homebrew-tap` e `JataiCloud/scoop-bucket`). Sem o `TAP_GITHUB_TOKEN`, a release sai com os binários, mas sem Homebrew e Scoop (o workflow avisa).
+- Para ensaiar localmente sem publicar: `goreleaser release --snapshot --clean`, e `JATAI_DIST_DIR=dist go test ./internal/update -run BuiltArchives`.
