@@ -18,11 +18,16 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
       - run: go test ./...
+      - run: node --test "npm/**/*.test.mjs" "scripts/*.test.mjs"
 
       - name: Avisar se Homebrew e Scoop vão ficar de fora
         if: env.TAP_GITHUB_TOKEN == ''
-        run: echo "::warning::TAP_GITHUB_TOKEN ausente. A release sai sem Homebrew e Scoop (os binários seguem)."
+        run: echo "::warning::TAP_GITHUB_TOKEN ausente. A release sai sem Homebrew e Scoop (binários e npm seguem)."
         env:
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
@@ -36,13 +41,18 @@ jobs:
           # Vazio ou ausente: o .goreleaser.yaml pula o cask e o manifesto Scoop.
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
-      # Confere que nomes, checksums e o
+      # Antes do npm, que não se desfaz: confere que nomes, checksums e o
       # binário na raiz dos pacotes batem com o que `jatai update` e os
       # instaladores esperam.
       - name: Conferir os pacotes gerados
         run: go test ./internal/update -run 'Goreleaser|BuiltArchives' -count=1
         env:
           JATAI_DIST_DIR: dist
+
+      - name: Publicar no npm
+        run: node scripts/npm-packages.mjs --version "${GITHUB_REF_NAME#v}" --publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - uses: actions/attest-build-provenance@v4
         with:
