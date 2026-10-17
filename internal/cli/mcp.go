@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/jataicloud/cli/internal/mcpserver"
+	"github.com/jataicloud/cli/internal/ui"
 	"github.com/jataicloud/cli/internal/update"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -18,6 +19,7 @@ func newMCPCmd(a *App) *cobra.Command {
 			a.UI.Out = a.UI.Err
 			a.UI.Interactive = false
 			a.UI.Color = false
+			a.UI.Prompter = ui.NonInteractivePrompter{}
 			in, out := a.Stdin, a.Stdout
 			if in == nil {
 				in = os.Stdin

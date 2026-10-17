@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jataicloud/cli/internal/api"
 	"github.com/jataicloud/cli/internal/config"
@@ -30,7 +31,8 @@ type state struct {
 
 	// loginMu serializa o jatai_login: uma espera de aprovação por vez.
 	loginMu sync.Mutex
-	pending *pendingLogin
+	// pending é atômico: a chamada que não pega o loginMu ainda lê o código.
+	pending atomic.Pointer[pendingLogin]
 }
 
 func newState(d Deps) *state { return &state{d: d.withDefaults()} }

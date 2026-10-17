@@ -1,13 +1,19 @@
 package mcpserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jataicloud/cli/internal/api"
 	"github.com/jataicloud/cli/internal/deployflow"
@@ -284,5 +290,158 @@ func TestExplainMapsEachFailureToTheNextStep(t *testing.T) {
 	}
 	if got := st.explain(&api.Error{Status: 403, Message: "Sem permissão"}); !strings.HasSuffix(got, "https://jataicloud.com.br/billing") {
 		t.Fatalf("403 text must end with the billing link: %q", got)
+	}
+}
+
+func TestLoginKeepsTheCodeThroughATemporaryServerError(t *testing.T) {
+	for _, status := range []int{502, 503, 429} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			m := newMCPTest(t)
+			m.json("POST /api/v1/cli/device_authorizations", 201, deviceStart())
+			m.call("jatai_login", nil)
+			m.json("POST /api/v1/cli/device_authorizations/token", status, map[string]any{"error": "indisponível"})
+
+			text, isErr := m.call("jatai_login", nil)
+			assertContains(t, text, "Ainda aguardando a aprovação de WDJB-MJHT", "jatai_login de novo", signupHint)
+			if isErr {
+				t.Fatalf("temporary error reported as failure: %q", text)
+			}
+
+			m.handle("POST /api/v1/cli/device_authorizations/token", func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]string
+				json.NewDecoder(r.Body).Decode(&body)
+				if body["device_code"] != "dev_secret_123" {
+					w.WriteHeader(400)
+					json.NewEncoder(w).Encode(map[string]any{"error": "expired_token"})
+					return
+				}
+				json.NewEncoder(w).Encode(map[string]any{"token": "jat_secret", "user": map[string]any{"name": "Ana", "email": "ana@x.com"}})
+			})
+			text, _ = m.call("jatai_login", nil)
+			assertContains(t, text, "Logado como Ana")
+			if m.savedToken() != "jat_secret" || m.calls("POST /api/v1/cli/device_authorizations") != 1 {
+				t.Fatalf("token = %q, device authorizations = %d", m.savedToken(), m.calls("POST /api/v1/cli/device_authorizations"))
+			}
+		})
+	}
+}
+
+func TestLoginDiscardsTheCodeOnOtherClientErrors(t *testing.T) {
+	m := newMCPTest(t)
+	m.json("POST /api/v1/cli/device_authorizations", 201, deviceStart())
+	m.call("jatai_login", nil)
+	m.json("POST /api/v1/cli/device_authorizations/token", 404, map[string]any{"error": "not_found"})
+
+	text, isErr := m.call("jatai_login", nil)
+
+	assertContains(t, text, "jatai_login de novo para gerar outro código")
+	assertMissing(t, text, "App não encontrado", "Use jatai_conta")
+	if !isErr {
+		t.Fatal("4xx should discard the code and fail")
+	}
+	m.call("jatai_login", nil)
+	if m.calls("POST /api/v1/cli/device_authorizations") != 2 {
+		t.Fatal("next call did not start a new code")
+	}
+}
+
+func TestConcurrentLoginAnswersAtOnceWithTheWaitingText(t *testing.T) {
+	m := newMCPTest(t)
+	m.deps.Budget = 10 * time.Second
+	m.json("POST /api/v1/cli/device_authorizations", 201, deviceStart())
+	m.call("jatai_login", nil)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	m.handle("POST /api/v1/cli/device_authorizations/token", func(w http.ResponseWriter, _ *http.Request) {
+		once.Do(func() { close(entered) })
+		<-release
+		json.NewEncoder(w).Encode(map[string]any{"token": "jat_secret", "user": map[string]any{"name": "Ana", "email": "ana@x.com"}})
+	})
+	first := make(chan string, 1)
+	go func() {
+		text, _ := m.call("jatai_login", nil)
+		first <- text
+	}()
+	<-entered
+
+	text, isErr := m.call("jatai_login", nil)
+
+	close(release)
+	assertContains(t, text, "Ainda aguardando a aprovação de WDJB-MJHT", signupHint)
+	if isErr {
+		t.Fatalf("%q", text)
+	}
+	assertContains(t, <-first, "Logado como Ana")
+}
+
+func TestLoginAfterTheCodeExpiredStartsANewOneAtOnce(t *testing.T) {
+	m := newMCPTest(t)
+	var mu sync.Mutex
+	now := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	m.deps.Now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	m.json("POST /api/v1/cli/device_authorizations", 201, deviceStart()) // expires_in 600
+	m.json("POST /api/v1/cli/device_authorizations/token", 400, map[string]any{"error": "authorization_pending"})
+	m.call("jatai_login", nil)
+	mu.Lock()
+	now = now.Add(601 * time.Second)
+	mu.Unlock()
+
+	text, isErr := m.call("jatai_login", nil)
+
+	assertContains(t, text, "Peça ao usuário para abrir")
+	if isErr || m.calls("POST /api/v1/cli/device_authorizations") != 2 || m.calls("POST /api/v1/cli/device_authorizations/token") != 0 {
+		t.Fatalf("isErr = %v, starts = %d, polls = %d", isErr, m.calls("POST /api/v1/cli/device_authorizations"),
+			m.calls("POST /api/v1/cli/device_authorizations/token"))
+	}
+}
+
+func TestAccountFolderLineCoversAppMalformedFileAndHome(t *testing.T) {
+	m := newMCPTest(t)
+	m.login()
+	m.json("GET /api/v1/account", 200, accountBody(map[string]any{"available": true, "app": nil}, false))
+	m.json("GET /api/v1/apps", 200, []map[string]any{})
+	withApp, broken := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(withApp, ".jatai.yml"), []byte("app: loja\nstack: node\n"), 0o644)
+	os.WriteFile(filepath.Join(broken, ".jatai.yml"), []byte("app: [loja\n"), 0o644)
+
+	text, _ := m.call("jatai_conta", map[string]any{"pasta": withApp})
+	assertContains(t, text, "app loja (.jatai.yml)", "jatai_publicar")
+	text, _ = m.call("jatai_conta", map[string]any{"pasta": broken})
+	assertContains(t, text, "não consegui ler o .jatai.yml")
+	assertMissing(t, text, "ainda não tem app")
+	text, _ = m.call("jatai_conta", map[string]any{"pasta": m.deps.Paths.Home})
+	assertContains(t, text, "Informe `pasta`")
+}
+
+func TestAccountNotFoundDoesNotSendTheAgentInCircles(t *testing.T) {
+	m := newMCPTest(t)
+	m.login()
+	m.json("GET /api/v1/account", 404, map[string]any{"error": "not_found"})
+
+	text, isErr := m.call("jatai_conta", nil)
+
+	assertContains(t, text, "O Jataí não reconheceu esta operação", "npm update -g jatai")
+	assertMissing(t, text, "App não encontrado", "Use jatai_conta")
+	if !isErr {
+		t.Fatal("expected an error")
+	}
+}
+
+func TestPackageExplainNamesTheFailingHost(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	base := srv.URL
+	srv.Close()
+	c, _ := api.New(base, "", "teste")
+	c.RetryDelay = 0
+	err := c.Get(context.Background(), "/api/v1/apps", nil, nil)
+
+	got := explain(err)
+
+	if got != "Sem conexão com a API do Jataí ("+base+"). Tente de novo em instantes." {
+		t.Fatalf("%q (err %v)", got, err)
 	}
 }

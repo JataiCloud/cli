@@ -29,6 +29,24 @@ func (s *state) explain(err error) string {
 	return explainWith(err, s.d.UpdateHint, config.APIURL(s.d.Getenv))
 }
 
+// explainAccount é o explain do jatai_conta e do jatai_login: lá um 404 não é
+// "app não encontrado" (mandar chamar jatai_conta faria a IA girar em
+// círculo), e sim rota que esta versão da CLI espera e o servidor não tem.
+func (s *state) explainAccount(err error) string {
+	if api.IsStatus(err, http.StatusNotFound) {
+		return "O Jataí não reconheceu esta operação — a CLI pode estar desatualizada. Atualize com: " +
+			hintOrDefault(s.d.UpdateHint)
+	}
+	return s.explain(err)
+}
+
+func hintOrDefault(hint string) string {
+	if hint == "" {
+		return "jatai update (ou npm update -g jatai, se veio do npm)"
+	}
+	return hint
+}
+
 func explainWith(err error, updateHint, apiURL string) string {
 	if err == nil {
 		return ""
@@ -41,7 +59,8 @@ func explainWith(err error, updateHint, apiURL string) string {
 		return explainAPI(apiErr, updateHint)
 	}
 	var urlErr *url.Error
-	if api.IsNetwork(err) || errors.As(err, &urlErr) {
+	hasURLErr := errors.As(err, &urlErr) // fora do ||: o endereço vem dele mesmo quando IsNetwork já bastaria
+	if api.IsNetwork(err) || hasURLErr {
 		if apiURL == "" {
 			apiURL = baseOf(urlErr)
 		}
@@ -68,10 +87,7 @@ func explainAPI(e *api.Error, updateHint string) string {
 	case http.StatusConflict:
 		return msg + " Use jatai_status para acompanhar."
 	case http.StatusUpgradeRequired:
-		if updateHint == "" {
-			updateHint = "jatai update (ou npm update -g jatai, se veio do npm)"
-		}
-		return "Esta versão da CLI ficou para trás. Atualize com: " + updateHint +
+		return "Esta versão da CLI ficou para trás. Atualize com: " + hintOrDefault(updateHint) +
 			". Depois reinicie o servidor MCP jatai no agente para carregar a versão nova."
 	default:
 		return msg

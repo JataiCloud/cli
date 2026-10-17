@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jataicloud/cli/internal/config"
+	"github.com/jataicloud/cli/internal/ui"
 )
 
 // TestMain deixa o binário de teste fazer o papel do `jatai` de verdade:
@@ -201,6 +202,9 @@ func TestMCPCommandSendsTheUIToStderr(t *testing.T) {
 
 	if code := e.run("mcp"); code != 0 {
 		t.Fatalf("code = %d, err = %q", code, e.err)
+	}
+	if _, ok := e.app.UI.Prompter.(ui.NonInteractivePrompter); !ok {
+		t.Fatalf("prompter = %T", e.app.UI.Prompter)
 	}
 	if e.app.UI.Out != e.app.UI.Err || e.app.UI.Interactive || e.app.UI.Color {
 		t.Fatalf("ui = %+v", e.app.UI)

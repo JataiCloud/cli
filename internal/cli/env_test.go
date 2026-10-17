@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +41,8 @@ func newTestEnv(t *testing.T) *testEnv {
 	}
 	e.app = &App{
 		UI:              &ui.UI{Out: e.out, Err: e.err, Interactive: true, Prompter: e.prompter},
+		Stdin:           strings.NewReader(""), // nunca o stdin de quem roda os testes
+		Stdout:          io.Discard,
 		Paths:           config.Paths{Home: t.TempDir()},
 		Version:         "2.0.0",
 		Getenv:          func(k string) string { return e.vars[k] },
