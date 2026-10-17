@@ -1,0 +1,19 @@
+{
+  "user": {
+    "name": "Ana",
+    "email": "verlene@johnson-deckow.test"
+  },
+  "team": {
+    "name": "Equipe de Ana",
+    "slug": "equipe-de-ana"
+  },
+  "apps": {
+    "count": 0,
+    "limit": 50
+  },
+  "courtesy": {
+    "available": true,
+    "app": null
+  },
+  "payment_method": false
+}

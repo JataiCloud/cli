@@ -1,0 +1,21 @@
+{
+  "id": 2620,
+  "status": "partially_live",
+  "trigger": "manual",
+  "branch": null,
+  "commit_sha": "bc4afe25b59264443f9c7521e62d4ceac789dc28",
+  "commit_message": "Aliquid qui magnam vel.",
+  "docker_image": null,
+  "build_duration": null,
+  "deploy_duration": null,
+  "started_at": null,
+  "finished_at": null,
+  "created_at": "2026-10-16T22:40:18.732-03:00",
+  "process_failures": [
+    {
+      "name": "worker",
+      "reason": "rollout não completou em 180s"
+    }
+  ],
+  "deployed_by": null
+}

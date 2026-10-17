@@ -15,3 +15,11 @@ Deploy de apps Rails, Node.js, sites estáticos ou qualquer Dockerfile na nuvem 
     jatai up
 
 Documentação: https://jataicloud.com.br/docs/quickstart
+
+## Contrato com o servidor
+
+`internal/cli/testdata/api` guarda respostas reais da API, gravadas pelos request specs da plataforma. Para regenerar, no repositório da plataforma:
+
+    CLI_FIXTURES_DIR=<este repositório>/internal/cli/testdata/api bundle exec rspec spec/requests/api/v1 --order defined
+
+`go test ./...` confere que cada resposta traz o que a CLI lê (`internal/cli`, `internal/mcpserver` e `internal/deployflow` têm um `contract_test.go`). Regenere antes de cada release e revise os arquivos (o repositório é público).

@@ -1,0 +1,20 @@
+{
+  "id": 8260,
+  "name": "ct-app",
+  "slug": "ct-app",
+  "stack": "rails",
+  "preset": "base",
+  "region": "br-se1",
+  "status": "pending",
+  "subdomain": "ct-app",
+  "url": "https://ct-app.jataiapp.com.br",
+  "repo_url": null,
+  "repo_branch": "main",
+  "auto_deploy": false,
+  "dockerfile_path": "Dockerfile",
+  "port": 3000,
+  "database_plan": null,
+  "created_at": "2026-10-16T22:40:16.323-03:00",
+  "updated_at": "2026-10-16T22:40:16.323-03:00",
+  "last_deploy": null
+}
