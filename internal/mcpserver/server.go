@@ -192,7 +192,7 @@ type statusInput struct {
 type logsInput struct {
 	Pasta  string `json:"pasta,omitempty" jsonschema:"Caminho absoluto da pasta do projeto (padrão: o diretório de trabalho do servidor)."`
 	App    string `json:"app,omitempty" jsonschema:"Slug do app no Jataí (padrão: o do .jatai.yml da pasta)."`
-	Filtro string `json:"filtro,omitempty" jsonschema:"Texto que a linha precisa conter (opcional)."`
+	Filtro string `json:"filtro,omitempty" jsonschema:"Texto que a linha precisa conter, sem diferenciar maiúsculas (opcional); vale para as últimas 500 linhas."`
 	Linhas int    `json:"linhas,omitempty" jsonschema:"Quantas linhas recentes (padrão 100, máximo 500)."`
 }
 
@@ -232,8 +232,9 @@ const (
 	statusDesc = "Status do app e do último deploy, com as últimas linhas do build se ele falhou. Com aguardar " +
 		"(padrão), espera por até 45 s um deploy em andamento terminar. Use depois de jatai_publicar responder " +
 		"\"em andamento\"."
-	logsDesc = "Linhas recentes do log do app em execução, com filtro de texto opcional. Use para investigar erro " +
-		"depois de publicado (página com erro 500, app reiniciando)."
+	logsDesc = "Linhas recentes do log do app em execução, uma por linha (hora [nível] mensagem), com filtro de " +
+		"texto opcional sobre as últimas 500 linhas. Use para investigar erro depois de publicado (página com erro " +
+		"500, app reiniciando)."
 	listarDesc  = "Lista as chaves das variáveis de ambiente do app. Os valores nunca são mostrados."
 	definirDesc = "Define (cria ou altera) variáveis de ambiente do app. Valem no próximo deploy; use publicar=true " +
 		"para publicar em seguida. A resposta lista só as chaves, nunca os valores."
@@ -247,13 +248,8 @@ func (s *state) registerTools(srv *mcp.Server) {
 	addTool(srv, s, "jatai_criar_app", criarAppDesc, s.createApp)
 	addTool(srv, s, "jatai_publicar", publicarDesc, s.publish)
 	addTool(srv, s, "jatai_status", statusDesc, s.status)
-	addTool(srv, s, "jatai_logs", logsDesc, underConstruction[logsInput])
-	addTool(srv, s, "jatai_variaveis_listar", listarDesc, underConstruction[listarInput])
-	addTool(srv, s, "jatai_variaveis_definir", definirDesc, underConstruction[definirInput])
-	addTool(srv, s, "jatai_variaveis_remover", removerDesc, underConstruction[removerInput])
-}
-
-// underConstruction segura o lugar das ferramentas das Tasks 23–24.
-func underConstruction[In any](context.Context, *mcp.CallToolRequest, In) *mcp.CallToolResult {
-	return toolError("em construção")
+	addTool(srv, s, "jatai_logs", logsDesc, s.logs)
+	addTool(srv, s, "jatai_variaveis_listar", listarDesc, s.envList)
+	addTool(srv, s, "jatai_variaveis_definir", definirDesc, s.envSet)
+	addTool(srv, s, "jatai_variaveis_remover", removerDesc, s.envUnset)
 }

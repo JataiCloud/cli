@@ -313,6 +313,14 @@ func (s *state) publish(ctx context.Context, req *mcp.CallToolRequest, in public
 	if err != nil {
 		return toolError(s.explain(err))
 	}
+	return s.publishWith(ctx, req, c, in, deadline)
+}
+
+// publishWith é o caminho do jatai_publicar depois do login: o mesmo para a
+// ferramenta e para o publicar=true das variáveis, que repassam o prazo da
+// chamada deles.
+func (s *state) publishWith(ctx context.Context, req *mcp.CallToolRequest, c *api.Client, in publicarInput,
+	deadline time.Time) *mcp.CallToolResult {
 	t, err := s.publishTarget(ctx, req, in)
 	if err != nil {
 		return toolError(err.Error())
