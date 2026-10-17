@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/jataicloud/cli/internal/api"
 	"github.com/jataicloud/cli/internal/config"
@@ -33,16 +34,60 @@ type state struct {
 	loginMu sync.Mutex
 	// pending é atômico: a chamada que não pega o loginMu ainda lê o código.
 	pending atomic.Pointer[pendingLogin]
+
+	// ctx vive enquanto o servidor vive: os deploys em segundo plano rodam
+	// nele, e não no contexto da chamada, que acaba quando a ferramenta responde.
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	// jobsMu protege jobs, closing e a entrada em jobsWG.
+	jobsMu  sync.Mutex
+	jobs    map[string]*job
+	closing bool
+	jobsWG  sync.WaitGroup
 }
 
-func newState(d Deps) *state { return &state{d: d.withDefaults()} }
+// shutdownWait limita a espera pelos jobs no encerramento: o deploy continua
+// no servidor do Jataí, e o processo não pode ficar preso esperando por ele.
+const shutdownWait = 2 * time.Second
 
-// New monta o servidor com as nove ferramentas do curso.
+func newState(d Deps) *state { return newStateCtx(context.Background(), d) }
+
+func newStateCtx(ctx context.Context, d Deps) *state {
+	s := &state{d: d.withDefaults(), jobs: map[string]*job{}}
+	s.ctx, s.cancel = context.WithCancel(ctx)
+	return s
+}
+
+// New monta o servidor com as nove ferramentas do curso. Os deploys em
+// segundo plano dele vivem até o fim do processo; Serve os encerra ao sair.
 func New(d Deps) *mcp.Server { return newState(d).server() }
 
 // Serve atende um cliente pelo transporte até ele desconectar ou o ctx acabar.
+// Ao sair, cancela os deploys em acompanhamento e espera por eles (limitado).
 func Serve(ctx context.Context, d Deps, t mcp.Transport) error {
-	return New(d).Run(ctx, t)
+	s := newStateCtx(ctx, d)
+	defer s.shutdown()
+	return s.server().Run(ctx, t)
+}
+
+// shutdown cancela o contexto do servidor e espera os jobs por até
+// shutdownWait. Pode ser chamado mais de uma vez.
+func (s *state) shutdown() {
+	s.jobsMu.Lock()
+	s.closing = true
+	s.jobsMu.Unlock()
+	s.cancel()
+	done := make(chan struct{})
+	go func() {
+		s.jobsWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(shutdownWait):
+		fmt.Fprintln(s.d.Log, "jatai mcp: encerrando sem esperar o fim do acompanhamento de um deploy")
+	}
 }
 
 func (s *state) server() *mcp.Server {
@@ -199,9 +244,9 @@ const (
 func (s *state) registerTools(srv *mcp.Server) {
 	addTool(srv, s, "jatai_conta", contaDesc, s.account)
 	addTool(srv, s, "jatai_login", loginDesc, s.login)
-	addTool(srv, s, "jatai_criar_app", criarAppDesc, underConstruction[criarAppInput])
-	addTool(srv, s, "jatai_publicar", publicarDesc, underConstruction[publicarInput])
-	addTool(srv, s, "jatai_status", statusDesc, underConstruction[statusInput])
+	addTool(srv, s, "jatai_criar_app", criarAppDesc, s.createApp)
+	addTool(srv, s, "jatai_publicar", publicarDesc, s.publish)
+	addTool(srv, s, "jatai_status", statusDesc, s.status)
 	addTool(srv, s, "jatai_logs", logsDesc, underConstruction[logsInput])
 	addTool(srv, s, "jatai_variaveis_listar", listarDesc, underConstruction[listarInput])
 	addTool(srv, s, "jatai_variaveis_definir", definirDesc, underConstruction[definirInput])

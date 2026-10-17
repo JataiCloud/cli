@@ -69,7 +69,7 @@ func newMCPTest(t *testing.T) *mcpTest {
 		CanOpenBrowser:  func() bool { return false },
 		Now:             time.Now,
 		Sleep:           shortSleep,
-		PollInterval:    time.Millisecond,
+		PollInterval:    5 * time.Millisecond,
 		ReconnectDelays: []time.Duration{time.Millisecond},
 		WelcomeTimeout:  time.Second,
 		Budget:          200 * time.Millisecond,
@@ -121,6 +121,7 @@ func (m *mcpTest) connect() *mcp.ClientSession {
 	m.t.Cleanup(func() {
 		_ = cs.Close()
 		_ = ss.Wait()
+		st.shutdown()
 		cancel()
 	})
 	m.session = cs

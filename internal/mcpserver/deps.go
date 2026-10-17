@@ -66,6 +66,10 @@ func (d Deps) withDefaults() Deps {
 	if d.Sleep == nil {
 		d.Sleep = sleepCtx
 	}
+	if d.PollInterval <= 0 {
+		// Sem intervalo, o polling do deploy consultaria a API sem parar.
+		d.PollInterval = 5 * time.Second
+	}
 	if d.Budget <= 0 {
 		d.Budget = CallBudget
 	}

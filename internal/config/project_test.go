@@ -99,3 +99,17 @@ func TestDetectStack(t *testing.T) {
 		})
 	}
 }
+
+func TestNewProjectTrimsTheNameAndTreatsDetachedHeadAsMain(t *testing.T) {
+	p, err := NewProject("  Minha Loja \n", "node", "HEAD")
+
+	if err != nil || p.Name != "Minha Loja" || p.App != "minha-loja" {
+		t.Fatalf("p = %+v, err = %v", p, err)
+	}
+	if p.Branch != "main" {
+		t.Fatalf("branch = %q, want main for a detached HEAD", p.Branch)
+	}
+	if p, _ := NewProject("Loja", "node", " develop\n"); p.Branch != "develop" {
+		t.Fatalf("branch = %q", p.Branch)
+	}
+}

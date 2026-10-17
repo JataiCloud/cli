@@ -46,13 +46,17 @@ type Project struct {
 
 // NewProject monta o projeto novo, sem prompt: slug derivado do nome, Hex Base,
 // região padrão e branch `main` quando não informada. O `jatai init` e o MCP
-// compartilham este caminho.
+// compartilham este caminho. O nome chega sem aparar (de uma IA, de um
+// prompt), e a branch vem do `git rev-parse --abbrev-ref HEAD`, que responde
+// "HEAD" com o HEAD destacado: aí vale `main`.
 func NewProject(name, stack, branch string) (Project, error) {
+	name = strings.TrimSpace(name)
 	appSlug, ok := slug.From(name)
 	if !ok {
 		return Project{}, ErrNoUsableName
 	}
-	if branch == "" {
+	branch = strings.TrimSpace(branch)
+	if branch == "" || branch == "HEAD" {
 		branch = "main"
 	}
 	return Project{
