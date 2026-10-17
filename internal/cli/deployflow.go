@@ -12,8 +12,6 @@ import (
 )
 
 // Os comandos das demais tarefas leem os mesmos JSONs do deploy.
-//
-//nolint:unused // usado pelos comandos das próximas tarefas
 type appInfo = deployflow.App
 
 type deployInfo = deployflow.Deploy

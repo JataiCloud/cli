@@ -128,8 +128,6 @@ func (a *App) appSlug(p config.Project) (string, error) {
 }
 
 // appContext: login + projeto + slug, na ordem em que a gem checava.
-//
-//nolint:unused // usado pelos comandos das próximas tarefas
 func (a *App) appContext() (*api.Client, string, error) {
 	c, err := a.authedClient()
 	if err != nil {

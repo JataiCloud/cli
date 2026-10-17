@@ -7,8 +7,6 @@ import (
 )
 
 // Rótulos do Hex e do banco — o mesmo texto do painel e da fatura.
-//
-//nolint:unused // usado pelos comandos das próximas tarefas
 func hexLabel(tier string) string {
 	if tier == "" {
 		return "-"
@@ -16,7 +14,6 @@ func hexLabel(tier string) string {
 	return "Hex " + capitalize(strings.ReplaceAll(tier, "_", " "))
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func pgLabel(plan string) string {
 	if plan == "" {
 		return "sem banco"
@@ -24,7 +21,6 @@ func pgLabel(plan string) string {
 	return "PG " + capitalize(strings.ReplaceAll(plan, "_", " "))
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func capitalize(s string) string {
 	if s == "" {
 		return s
@@ -33,7 +29,6 @@ func capitalize(s string) string {
 	return strings.ToUpper(lower[:1]) + lower[1:]
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func colorizeStatus(u *ui.UI, s string) string {
 	switch s {
 	case "active", "live":
