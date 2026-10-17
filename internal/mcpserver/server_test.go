@@ -286,6 +286,23 @@ func TestEnvToolSchemasSayValuesAreStrings(t *testing.T) {
 	}
 }
 
+func TestCreateAppSaysNameAndStackAreIgnoredWithAProjectFile(t *testing.T) {
+	for _, tool := range newMCPTest(t).tools() {
+		if tool.Name != "jatai_criar_app" {
+			continue
+		}
+		schema, _ := tool.InputSchema.(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		for _, field := range []string{"nome", "stack"} {
+			prop, _ := props[field].(map[string]any)
+			desc, _ := prop["description"].(string)
+			assertContains(t, desc, "Ignorado se a pasta já tem .jatai.yml.")
+		}
+		return
+	}
+	t.Fatal("tool jatai_criar_app not registered")
+}
+
 func TestLogsDescriptionMentionsTheLineCut(t *testing.T) {
 	for _, tool := range newMCPTest(t).tools() {
 		if tool.Name == "jatai_logs" {

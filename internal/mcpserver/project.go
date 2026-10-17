@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/jataicloud/cli/internal/api"
 	"github.com/jataicloud/cli/internal/config"
+	"github.com/jataicloud/cli/internal/deployflow"
 	"github.com/jataicloud/cli/internal/slug"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -29,7 +32,7 @@ func (s *state) createApp(ctx context.Context, req *mcp.CallToolRequest, in cria
 	if err != nil {
 		return toolError(err.Error())
 	}
-	p, path, err := s.ensureProject(dir, in.Nome, in.Stack)
+	p, path, fresh, err := s.draftProject(dir, in.Nome, in.Stack)
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -39,8 +42,20 @@ func (s *state) createApp(ctx context.Context, req *mcp.CallToolRequest, in cria
 	}
 	cctx, cancel := context.WithTimeout(ctx, s.d.Budget)
 	defer cancel()
+	if fresh {
+		if path, err = s.claimSlug(cctx, c, dir, p, guess); err != nil {
+			return toolError(err.Error())
+		}
+	}
 	p.Branch = s.branchFor(dir, p) // repo_branch pela mesma regra do jatai_publicar
-	app, created, err := s.runner(c, nil).EnsureApp(cctx, dir, hexBase(p), path, guess)
+	r := s.runner(c, nil)
+	var app deployflow.App
+	created := fresh
+	if fresh {
+		app, err = r.CreateApp(cctx, dir, hexBase(p), path)
+	} else {
+		app, created, err = r.EnsureApp(cctx, dir, hexBase(p), path, guess)
+	}
 	if err != nil {
 		return toolError(s.explain(err))
 	}
@@ -54,7 +69,7 @@ func (s *state) createApp(ctx context.Context, req *mcp.CallToolRequest, in cria
 	}
 	text := fmt.Sprintf("App %s criado no Jataí (stack %s, Hex Base).", app.Slug, stackLabel(stack))
 	if stack != "static" {
-		text += " PG Base incluído e DATABASE_URL nas variáveis."
+		text += " O PG Base e o DATABASE_URL entram no primeiro jatai_publicar."
 	}
 	return textResult(text + " Próximo passo: jatai_publicar.")
 }
@@ -73,29 +88,30 @@ func hexBase(p config.Project) config.Project {
 	return p
 }
 
-// ensureProject lê o .jatai.yml da pasta ou, sem ele, cria um como o `jatai
+// draftProject lê o .jatai.yml da pasta ou, sem ele, monta um como o `jatai
 // init` faria sem perguntas: nome (padrão: o da pasta), stack (padrão: a
-// detectada) e a branch do git. Um arquivo existente é reaproveitado sem
-// sobrescrever nada — ele é do cliente.
-func (s *state) ensureProject(dir, name, stack string) (config.Project, string, error) {
-	p, path, err := config.LoadProject(dir)
+// detectada) e a branch do git. O rascunho (fresh) ainda não está gravado:
+// quem chama confere antes, com claimSlug, que o slug não é de outro app.
+// Um arquivo existente é reaproveitado sem sobrescrever nada — ele é do cliente.
+func (s *state) draftProject(dir, name, stack string) (p config.Project, path string, fresh bool, err error) {
+	p, path, err = config.LoadProject(dir)
 	switch {
 	case err == nil && strings.TrimSpace(p.App) != "":
-		return p, path, nil
+		return p, path, false, nil
 	case err == nil:
-		return p, path, fmt.Errorf("O %s desta pasta não tem `app`. Preencha `app` com o identificador do app ou "+
-			"apague o arquivo e chame jatai_criar_app.", filepath.Base(path))
+		return p, path, false, fmt.Errorf("O %s desta pasta não tem `app`. Preencha `app` com o identificador do app "+
+			"ou apague o arquivo e chame jatai_criar_app.", filepath.Base(path))
 	case !errors.Is(err, config.ErrNoProject):
-		return p, path, unreadableProject(path, err)
+		return p, path, false, unreadableProject(path, err)
 	}
 	stack = strings.ToLower(strings.TrimSpace(stack))
 	switch {
 	case stack != "" && !slices.Contains(stacks, stack):
-		return p, path, fmt.Errorf("Stack %q desconhecida. Informe em `stack` uma destas: %s.", stack, stackList)
+		return p, path, false, fmt.Errorf("Stack %q desconhecida. Informe em `stack` uma destas: %s.", stack, stackList)
 	case stack == "":
 		if stack = config.DetectStack(dir); stack == "" {
-			return p, path, fmt.Errorf("Não consegui detectar a stack de %s. Chame de novo informando `stack`: %s.",
-				dir, stackList)
+			return p, path, false, fmt.Errorf("Não consegui detectar a stack de %s. Chame de novo informando `stack`: "+
+				"%s.", dir, stackList)
 		}
 	}
 	if strings.TrimSpace(name) == "" {
@@ -103,16 +119,39 @@ func (s *state) ensureProject(dir, name, stack string) (config.Project, string, 
 	}
 	p, err = config.NewProject(name, stack, s.gitBranch(dir))
 	if errors.Is(err, config.ErrNoUsableName) {
-		return p, path, fmt.Errorf("Não consegui gerar um identificador a partir de %q. Informe `nome` com letras "+
-			"ou números.", strings.TrimSpace(name))
+		return p, path, false, fmt.Errorf("Não consegui gerar um identificador a partir de %q. Informe `nome` com "+
+			"letras ou números.", strings.TrimSpace(name))
 	}
 	if err != nil {
-		return p, path, err
+		return p, path, false, err
+	}
+	return p, path, true, nil
+}
+
+// claimSlug é a guarda da pasta nova (sem .jatai.yml): se o slug derivado do
+// nome já é de um app do time, nada é gravado nem publicado — o my-app do
+// create-next-app não pode cair em silêncio por cima do exercício anterior.
+// Livre (404), grava o .jatai.yml e devolve o caminho dele.
+func (s *state) claimSlug(ctx context.Context, c *api.Client, dir string, p config.Project, guess string) (string, error) {
+	var existing deployflow.App
+	err := c.Get(ctx, "/api/v1/apps/"+guess, nil, &existing)
+	switch {
+	case err == nil:
+		return "", homonymError(guess)
+	case !api.IsStatus(err, http.StatusNotFound):
+		return "", errors.New(s.explain(err))
 	}
 	if err := config.WriteProject(dir, p); err != nil {
-		return p, path, fmt.Errorf("Não consegui gravar o %s em %s: %v", config.ProjectFile, dir, err)
+		return "", fmt.Errorf("Não consegui gravar o %s em %s: %v", config.ProjectFile, dir, err)
 	}
-	return p, filepath.Join(dir, config.ProjectFile), nil
+	return filepath.Join(dir, config.ProjectFile), nil
+}
+
+func homonymError(slug string) error {
+	return fmt.Errorf("Já existe no seu time um app %s, e esta pasta ainda não tem .jatai.yml: nada foi gravado, "+
+		"criado ou publicado. Pergunte ao usuário o que ele quer. Para publicar esta pasta nesse app de propósito (substituindo "+
+		"o que está no ar), chame jatai_publicar com app: \"%s\". Para criar um app novo, chame jatai_criar_app "+
+		"com `nome` diferente (por exemplo, o nome do exercício).", slug, slug)
 }
 
 func unreadableProject(path string, err error) error {
@@ -120,8 +159,10 @@ func unreadableProject(path string, err error) error {
 		filepath.Base(path), err)
 }
 
+// gitBranch só chama o git dentro de um repositório: num Mac sem as Command
+// Line Tools, qualquer `git` abre a janela de instalação na frente do aluno.
 func (s *state) gitBranch(dir string) string {
-	if s.d.Git == nil {
+	if s.d.Git == nil || !config.IsGitRepo(dir) {
 		return ""
 	}
 	branch, err := s.d.Git(dir, "rev-parse", "--abbrev-ref", "HEAD")

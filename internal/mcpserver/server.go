@@ -174,8 +174,8 @@ type loginInput struct {
 type criarAppInput struct {
 	Pasta string `json:"pasta,omitempty" jsonschema:"Caminho absoluto da pasta do projeto (padrão: o diretório de trabalho do servidor)."`
 	App   string `json:"app,omitempty" jsonschema:"Não usado na criação: o slug é gerado a partir de nome."`
-	Nome  string `json:"nome,omitempty" jsonschema:"Nome do app (padrão: o nome da pasta); o slug é gerado a partir dele."`
-	Stack string `json:"stack,omitempty" jsonschema:"rails, node, static ou docker (padrão: detectar pelos arquivos da pasta)."`
+	Nome  string `json:"nome,omitempty" jsonschema:"Nome do app (padrão: o nome da pasta); o slug é gerado a partir dele. Ignorado se a pasta já tem .jatai.yml."`
+	Stack string `json:"stack,omitempty" jsonschema:"rails, node, static ou docker (padrão: detectar pelos arquivos da pasta). Ignorado se a pasta já tem .jatai.yml."`
 }
 
 type publicarInput struct {

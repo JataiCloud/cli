@@ -39,8 +39,9 @@ func normalizeGitRemote(u string) string {
 	return ""
 }
 
+// gitRemote só chama o git dentro de um repositório (ver config.IsGitRepo).
 func (r *Runner) gitRemote(dir string) string {
-	if r.Git == nil {
+	if r.Git == nil || !config.IsGitRepo(dir) {
 		return ""
 	}
 	out, err := r.Git(dir, "remote", "get-url", "origin")
@@ -75,6 +76,12 @@ func (r *Runner) EnsureApp(ctx context.Context, dir string, p config.Project, pr
 	}
 	app, err = r.createApp(ctx, dir, p, projectPath)
 	return app, err == nil, err
+}
+
+// CreateApp cria o app sem procurar antes, para quem já sabe que o slug está
+// livre; grava no arquivo do projeto o slug que o servidor escolheu.
+func (r *Runner) CreateApp(ctx context.Context, dir string, p config.Project, projectPath string) (App, error) {
+	return r.createApp(ctx, dir, p, projectPath)
 }
 
 func (r *Runner) createApp(ctx context.Context, dir string, p config.Project, projectPath string) (App, error) {

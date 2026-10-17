@@ -305,6 +305,8 @@ type target struct {
 	slug     string
 	branch   string
 	explicit bool
+	// create: pasta nova cujo slug o claimSlug já viu livre — cria direto.
+	create bool
 }
 
 func (s *state) publish(ctx context.Context, req *mcp.CallToolRequest, in publicarInput) *mcp.CallToolResult {
@@ -321,7 +323,7 @@ func (s *state) publish(ctx context.Context, req *mcp.CallToolRequest, in public
 // chamada deles.
 func (s *state) publishWith(ctx context.Context, req *mcp.CallToolRequest, c *api.Client, in publicarInput,
 	deadline time.Time) *mcp.CallToolResult {
-	t, err := s.publishTarget(ctx, req, in)
+	t, err := s.publishTarget(ctx, req, c, in, deadline)
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -333,8 +335,10 @@ func (s *state) publishWith(ctx context.Context, req *mcp.CallToolRequest, c *ap
 }
 
 // publishTarget: com `app`, publica a pasta nesse app (que precisa existir);
-// sem ele, o app do .jatai.yml, criando o arquivo como o jatai_criar_app.
-func (s *state) publishTarget(ctx context.Context, req *mcp.CallToolRequest, in publicarInput) (target, error) {
+// sem ele, o app do .jatai.yml, criando o arquivo como o jatai_criar_app —
+// com a mesma guarda contra adotar um app homônimo.
+func (s *state) publishTarget(ctx context.Context, req *mcp.CallToolRequest, c *api.Client, in publicarInput,
+	deadline time.Time) (target, error) {
 	dir, err := s.resolveDir(ctx, req, in.Pasta)
 	if err != nil {
 		return target{}, err
@@ -350,7 +354,7 @@ func (s *state) publishTarget(ctx context.Context, req *mcp.CallToolRequest, in 
 		}
 		return s.newTarget(dir, p, path, sl, true), nil
 	}
-	p, path, err := s.ensureProject(dir, "", "")
+	p, path, fresh, err := s.draftProject(dir, "", "")
 	if err != nil {
 		return target{}, err
 	}
@@ -358,7 +362,16 @@ func (s *state) publishTarget(ctx context.Context, req *mcp.CallToolRequest, in 
 	if err != nil {
 		return target{}, err
 	}
-	return s.newTarget(dir, p, path, sl, false), nil
+	if fresh {
+		cctx, cancel := context.WithDeadline(ctx, deadline)
+		defer cancel()
+		if path, err = s.claimSlug(cctx, c, dir, p, sl); err != nil {
+			return target{}, err
+		}
+	}
+	t := s.newTarget(dir, p, path, sl, false)
+	t.create = fresh
+	return t, nil
 }
 
 func (s *state) newTarget(dir string, p config.Project, path, sl string, explicit bool) target {
@@ -476,6 +489,9 @@ func (s *state) deploy(j *job, t target, c *api.Client) (string, error) {
 }
 
 func (s *state) findApp(ctx context.Context, r *deployflow.Runner, t target) (deployflow.App, error) {
+	if t.create {
+		return r.CreateApp(ctx, t.dir, hexBase(t.project), t.path)
+	}
 	if !t.explicit {
 		return r.FindOrCreateApp(ctx, t.dir, hexBase(t.project), t.path, t.slug)
 	}

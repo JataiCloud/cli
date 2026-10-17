@@ -47,8 +47,8 @@ func TestCreateAppWritesTheProjectAndCreatesTheApp(t *testing.T) {
 	if isErr {
 		t.Fatalf("error: %s", text)
 	}
-	if text != "App minha-loja criado no Jataí (stack Node.js, Hex Base). PG Base incluído e DATABASE_URL nas "+
-		"variáveis. Próximo passo: jatai_publicar." {
+	if text != "App minha-loja criado no Jataí (stack Node.js, Hex Base). O PG Base e o DATABASE_URL entram no "+
+		"primeiro jatai_publicar. Próximo passo: jatai_publicar." {
 		t.Fatalf("text = %q", text)
 	}
 	p, _, err := config.LoadProject(m.dir)
@@ -68,6 +68,7 @@ func TestCreateAppUsesTheFolderNameTheGitBranchAndTheExplicitStack(t *testing.T)
 	dir := filepath.Join(m.dir, "Portfolio Ana")
 	os.Mkdir(dir, 0o755)
 	writeFile(t, dir, "package.json", "{}")
+	os.Mkdir(filepath.Join(dir, ".git"), 0o755)
 	m.deps.Git = func(_ string, args ...string) (string, error) {
 		if strings.Join(args, " ") == "rev-parse --abbrev-ref HEAD" {
 			return "develop", nil
@@ -243,5 +244,76 @@ func TestAppSlugPrefersTheExplicitAppThenTheProjectFile(t *testing.T) {
 	}
 	if _, err := st.appSlug(dir, "!!!"); err == nil {
 		t.Fatal("accepted an app without letters or digits")
+	}
+}
+
+// myAppFolder é a pasta padrão do create-next-app, sem .jatai.yml, num time
+// que já tem o app my-app (o exercício anterior do aluno).
+func myAppFolder(t *testing.T, m *mcpTest) string {
+	t.Helper()
+	m.login()
+	dir := filepath.Join(m.dir, "my-app")
+	os.Mkdir(dir, 0o755)
+	writeFile(t, dir, "package.json", `{"name":"my-app"}`)
+	m.json("GET /api/v1/apps/my-app", 200, map[string]any{"id": 9, "slug": "my-app", "status": "active",
+		"url": "https://my-app.jataiapp.com.br"})
+	return dir
+}
+
+func assertNoProjectFile(t *testing.T, dir string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(dir, config.ProjectFile)); err == nil {
+		t.Fatal(".jatai.yml written")
+	}
+}
+
+func TestCreateAppInAFreshFolderDoesNotAdoptAnAppWithTheSameSlug(t *testing.T) {
+	m := newMCPTest(t)
+	dir := myAppFolder(t, m)
+
+	text, isErr := m.call("jatai_criar_app", map[string]any{"pasta": dir})
+
+	assertContains(t, text, "Já existe no seu time um app my-app", `app: "my-app"`, "jatai_publicar",
+		"`nome`", "jatai_criar_app")
+	if !isErr || m.calls("POST /api/v1/apps") != 0 || m.calls("PATCH /api/v1/apps/my-app") != 0 {
+		t.Fatalf("isErr = %v, POST = %d", isErr, m.calls("POST /api/v1/apps"))
+	}
+	assertNoProjectFile(t, dir)
+}
+
+func TestCreateAppInAFreshFolderWithAnotherNameCreatesANewApp(t *testing.T) {
+	m := newMCPTest(t)
+	dir := myAppFolder(t, m)
+	body := createdApp(m, "aula-2", "pending")
+
+	text, isErr := m.call("jatai_criar_app", map[string]any{"pasta": dir, "nome": "Aula 2"})
+
+	assertContains(t, text, "App aula-2 criado")
+	if p, _, err := config.LoadProject(dir); isErr || err != nil || p.App != "aula-2" {
+		t.Fatalf("isErr = %v, project = %+v, err = %v", isErr, p, err)
+	}
+	if (*body)["name"] != "Aula 2" || m.calls("GET /api/v1/apps/my-app") != 0 || m.calls("GET /api/v1/apps/aula-2") != 1 {
+		t.Fatalf("POST body = %v, GET my-app = %d", *body, m.calls("GET /api/v1/apps/my-app"))
+	}
+}
+
+func TestCreateAppReadsGitOnlyInsideARepository(t *testing.T) {
+	m := newMCPTest(t)
+	m.login()
+	writeFile(t, m.dir, "package.json", "{}")
+	var gitCalls []string
+	m.deps.Git = func(dir string, args ...string) (string, error) {
+		gitCalls = append(gitCalls, strings.Join(args, " "))
+		return "", os.ErrNotExist
+	}
+	createdApp(m, "sem-git", "pending")
+
+	_, isErr := m.call("jatai_criar_app", map[string]any{"pasta": m.dir, "nome": "Sem Git"})
+
+	if isErr || len(gitCalls) != 0 {
+		t.Fatalf("isErr = %v, git calls = %v", isErr, gitCalls)
+	}
+	if p, _, _ := config.LoadProject(m.dir); p.Branch != "main" {
+		t.Fatalf("branch = %q", p.Branch)
 	}
 }

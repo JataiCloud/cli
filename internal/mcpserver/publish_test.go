@@ -627,3 +627,35 @@ func TestProgressReporterMapsWebSocketStatusesToPhases(t *testing.T) {
 		t.Fatalf("phase = %q", j.phase)
 	}
 }
+
+func TestPublishInAFreshFolderDoesNotDeployOverAnAppWithTheSameSlug(t *testing.T) {
+	m := newMCPTest(t)
+	m.deps.Budget = 5 * time.Second
+	dir := myAppFolder(t, m)
+	m.json("POST /api/v1/apps/my-app/deploys", 201, map[string]any{"id": 7, "status": "queued"})
+
+	text, isErr := m.call("jatai_publicar", map[string]any{"pasta": dir})
+
+	assertContains(t, text, "Já existe no seu time um app my-app", `app: "my-app"`, "`nome`")
+	if !isErr || m.calls("POST /api/v1/apps/my-app/deploys") != 0 || m.calls("POST /api/v1/apps") != 0 {
+		t.Fatalf("isErr = %v, deploys = %d", isErr, m.calls("POST /api/v1/apps/my-app/deploys"))
+	}
+	assertNoProjectFile(t, dir)
+}
+
+func TestPublishInAFreshFolderWithAnExplicitAppPublishesToIt(t *testing.T) {
+	m := newMCPTest(t)
+	m.deps.Budget = 5 * time.Second
+	dir := myAppFolder(t, m)
+	m.json("POST /api/v1/apps/my-app/deploys", 201, map[string]any{"id": 7, "status": "queued"})
+	m.json("GET /api/v1/apps/my-app/deploys/7", 200, map[string]any{"id": 7, "status": "live"})
+
+	text, isErr := m.call("jatai_publicar", map[string]any{"pasta": dir, "app": "my-app"})
+
+	if isErr || !strings.HasPrefix(text, "Publicado: https://my-app.jataiapp.com.br\n") {
+		t.Fatalf("%v %q", isErr, text)
+	}
+	if m.calls("POST /api/v1/apps/my-app/deploys") != 1 {
+		t.Fatal("did not deploy")
+	}
+}

@@ -117,6 +117,14 @@ func projectPath(dir string) string {
 	return current
 }
 
+// IsGitRepo diz se dir tem .git (pasta, ou arquivo de worktree/submódulo).
+// Quem chama o git confere antes: num Mac sem as Command Line Tools, o
+// `git` de sistema abre uma janela pedindo a instalação.
+func IsGitRepo(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
+}
+
 func LoadProject(dir string) (Project, string, error) {
 	path := projectPath(dir)
 	data, err := os.ReadFile(path)

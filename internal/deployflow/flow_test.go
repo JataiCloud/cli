@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
@@ -257,5 +259,40 @@ func TestEnsureAppSaysWhetherItCreatedTheApp(t *testing.T) {
 	app, created, err = r.EnsureApp(context.Background(), dir, config.Project{App: "nova"}, "", "nova")
 	if err != nil || !created || app.Slug != "nova" {
 		t.Fatalf("new: app = %+v, created = %v, err = %v", app, created, err)
+	}
+}
+
+func TestCreateAppSendsTheRemoteOnlyInsideAGitRepository(t *testing.T) {
+	var bodies []map[string]any
+	var mu sync.Mutex
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/apps", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			App map[string]any `json:"app"`
+		}
+		json.NewDecoder(r.Body).Decode(&in)
+		mu.Lock()
+		bodies = append(bodies, in.App)
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"id": 2, "slug": "nova", "status": "pending"})
+	})
+	r, _ := newRunner(t, mux)
+	gitCalls := 0
+	r.Git = func(string, ...string) (string, error) {
+		gitCalls++
+		return "git@github.com:ana/nova.git", nil
+	}
+	plain, repo := t.TempDir(), t.TempDir()
+	os.Mkdir(filepath.Join(repo, ".git"), 0o755)
+
+	for _, dir := range []string{plain, repo} {
+		if _, err := r.CreateApp(context.Background(), dir, config.Project{App: "nova"}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if gitCalls != 1 || bodies[0]["repo_url"] != nil || bodies[1]["repo_url"] != "https://github.com/ana/nova" {
+		t.Fatalf("git calls = %d, bodies = %v", gitCalls, bodies)
 	}
 }
