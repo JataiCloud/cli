@@ -28,7 +28,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: latest
-      - run: shellcheck scripts/install.sh
+      - run: shellcheck scripts/install.sh scripts/smoke.sh
 
   release-config:
     runs-on: ubuntu-latest

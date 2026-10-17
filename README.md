@@ -27,6 +27,12 @@ Documentação: https://jataicloud.com.br/docs/quickstart
 
 ## Release
 
+Antes de criar a tag: regenere o contrato (seção acima), revise os arquivos e rode `go test ./...`; depois rode o smoke contra produção, com o token de um time de teste (`/access_tokens`) e o slug de um app estático de teste (criado com `jatai init` + `jatai up`):
+
+    JATAI_TOKEN=… JATAI_SMOKE_APP=… scripts/smoke.sh
+
+O script compila o binário, confere que `jatai mcp` lista `jatai_publicar` e roda `version`, `status`, `env list`, `logs` e `deploy` de `testdata/smoke-site`. Cada comando sai com 0 e a última linha é `smoke ok`. Só então `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
 Uma tag `vX.Y.Z` (ou `vX.Y.Z-rc.N`) dispara `.github/workflows/release.yml`, em dois jobs:
 
 1. `release`: testes, GoReleaser (pacotes `jatai_<versão>_<os>_<arch>.tar.gz`, `.zip` no Windows, `checksums.txt`, `install.sh` e `install.ps1`, cask do Homebrew e manifesto do Scoop), attestation de provenance dos pacotes e upload do `dist/` como artefato do workflow.
