@@ -38,7 +38,7 @@ func newRootCmd(a *App) *cobra.Command {
 			Run: func(*cobra.Command, []string) { a.UI.Println("jatai " + a.Version) },
 		},
 		newLoginCmd(a), newLogoutCmd(a), newInitCmd(a), newUpCmd(a), newDeployCmd(a),
-		newStatusCmd(a),
+		newStatusCmd(a), newEnvCmd(a),
 	)
 	return root
 }
