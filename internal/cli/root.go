@@ -37,7 +37,7 @@ func newRootCmd(a *App) *cobra.Command {
 			Use: "version", Short: "Exibir versão da CLI", Args: cobra.NoArgs,
 			Run: func(*cobra.Command, []string) { a.UI.Println("jatai " + a.Version) },
 		},
-		newLoginCmd(a), newLogoutCmd(a),
+		newLoginCmd(a), newLogoutCmd(a), newInitCmd(a),
 	)
 	return root
 }

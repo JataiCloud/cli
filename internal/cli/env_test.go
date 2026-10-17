@@ -64,14 +64,12 @@ func (e *testEnv) login() {
 	}
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func (e *testEnv) writeProject(yaml string) {
 	if err := os.WriteFile(filepath.Join(e.dir, config.ProjectFile), []byte(yaml), 0o644); err != nil {
 		e.t.Fatal(err)
 	}
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func (e *testEnv) answer(answers ...string) {
 	e.prompter.Answers = append(e.prompter.Answers, answers...)
 }

@@ -150,8 +150,6 @@ func (a *App) appContext() (*api.Client, string, error) {
 }
 
 // ask converte "sem terminal" na instrução de qual flag usar.
-//
-//nolint:unused // usado pelos comandos das próximas tarefas
 func (a *App) ask(err error, hint string) error {
 	if errors.Is(err, ui.ErrNotInteractive) {
 		return userErr(hint)

@@ -56,3 +56,46 @@ func TestPersistSlugKeepsOtherKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestNewProjectDerivesSlugAndDefaults(t *testing.T) {
+	p, err := NewProject("Minha Loja", "node", "")
+
+	want := Project{App: "minha-loja", Name: "Minha Loja", Stack: "node", Preset: "base", Region: "br-se1", Branch: "main"}
+	if err != nil || p != want {
+		t.Fatalf("p = %+v, err = %v", p, err)
+	}
+	if p, _ := NewProject("Loja", "rails", "develop"); p.Branch != "develop" {
+		t.Fatalf("branch = %q", p.Branch)
+	}
+}
+
+func TestNewProjectRejectsANameWithoutLettersOrDigits(t *testing.T) {
+	if _, err := NewProject("!!!", "node", "main"); !errors.Is(err, ErrNoUsableName) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDetectStack(t *testing.T) {
+	cases := map[string]struct {
+		files map[string]string
+		want  string
+	}{
+		"rails":                 {map[string]string{"Gemfile": `gem "rails"`, "package.json": "{}"}, "rails"},
+		"node":                  {map[string]string{"package.json": "{}", "Dockerfile": "FROM x"}, "node"},
+		"docker":                {map[string]string{"Dockerfile": "FROM x", "index.html": ""}, "docker"},
+		"static":                {map[string]string{"index.html": "<html>"}, "static"},
+		"gemfile without rails": {map[string]string{"Gemfile": `gem "sinatra"`}, ""},
+		"empty":                 {nil, ""},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			for f, content := range c.files {
+				os.WriteFile(filepath.Join(dir, f), []byte(content), 0o644)
+			}
+			if got := DetectStack(dir); got != c.want {
+				t.Fatalf("DetectStack = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

@@ -7,7 +7,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/jataicloud/cli/internal/slug"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,6 +17,14 @@ const (
 	ProjectFile       = ".jatai.yml"
 	LegacyProjectFile = ".brasa.yml"
 )
+
+const (
+	DefaultRegion = "br-se1"
+	DefaultPreset = "base"
+)
+
+// ErrNoUsableName: o nome não tem letra nem número aproveitável para o slug.
+var ErrNoUsableName = errors.New("não consegui gerar um identificador a partir do nome")
 
 var ErrNoProject = errors.New("Arquivo .jatai.yml não encontrado. Execute `jatai init` primeiro.")
 
@@ -32,6 +42,50 @@ type Project struct {
 	Region  string   `yaml:"region,omitempty"`
 	Branch  string   `yaml:"branch,omitempty"`
 	Release *Release `yaml:"release,omitempty"`
+}
+
+// NewProject monta o projeto novo, sem prompt: slug derivado do nome, Hex Base,
+// região padrão e branch `main` quando não informada. O `jatai init` e o MCP
+// compartilham este caminho.
+func NewProject(name, stack, branch string) (Project, error) {
+	appSlug, ok := slug.From(name)
+	if !ok {
+		return Project{}, ErrNoUsableName
+	}
+	if branch == "" {
+		branch = "main"
+	}
+	return Project{
+		App: appSlug, Name: name, Stack: stack,
+		Preset: DefaultPreset, Region: DefaultRegion, Branch: branch,
+	}, nil
+}
+
+// StackLabels: o rótulo de cada stack, como o painel mostra.
+var StackLabels = map[string]string{
+	"rails": "Rails", "node": "Node.js",
+	"static": "Estático (HTML/CSS/JS, sem build)", "docker": "Docker (custom Dockerfile)",
+}
+
+// DetectStack segue a ordem da gem 1.5.0: Rails, Node, Dockerfile, estático
+// (index.html na raiz, sem nenhum dos anteriores). "" quando nada bate.
+func DetectStack(dir string) string {
+	exists := func(name string) bool {
+		_, err := os.Stat(filepath.Join(dir, name))
+		return err == nil
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "Gemfile")); err == nil && strings.Contains(string(data), "rails") {
+		return "rails"
+	}
+	switch {
+	case exists("package.json"):
+		return "node"
+	case exists("Dockerfile"):
+		return "docker"
+	case exists("index.html"):
+		return "static"
+	}
+	return ""
 }
 
 func (p Project) DisplayName() string {
