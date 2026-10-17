@@ -12,9 +12,11 @@ import (
 	"github.com/jataicloud/cli/internal/cable"
 )
 
-// Watch abre o WebSocket com o tempo-limite dado e roda fn. Qualquer erro que
-// não seja o Ctrl-C (tempo esgotado, WebSocket fora) manda para o polling,
-// como na gem.
+// Watch abre o WebSocket com o tempo-limite dado e roda fn. Não há reserva
+// aqui: qualquer erro volta para quem chamou (tempo esgotado já com mensagem em
+// português; WebSocket fora; Ctrl-C como o erro do contexto). Quem cai no
+// polling, como na gem, é Provision/WaitDeploy, e só quando o contexto de quem
+// chamou continua vivo.
 func (r *Runner) Watch(ctx context.Context, timeout time.Duration, fn func(context.Context, *cable.Conn) (string, error)) (string, error) {
 	wctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

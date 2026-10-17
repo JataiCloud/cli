@@ -3,6 +3,7 @@ package deployflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -131,5 +132,61 @@ func TestBuildLogTailAsksForTheLastLines(t *testing.T) {
 	}
 	if tail != "60" {
 		t.Errorf("tail = %q, want 60", tail)
+	}
+}
+
+func TestProvisionReturnsABillingErrorAtOnce(t *testing.T) {
+	for _, status := range []int{http.StatusPaymentRequired, http.StatusForbidden, http.StatusNotFound} {
+		mux := http.NewServeMux()
+		var polls int
+		mux.HandleFunc("POST /api/v1/apps/loja/provision", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Cadastre um cartão em https://jataicloud.com.br/billing"})
+		})
+		mux.HandleFunc("GET /api/v1/apps/loja", func(http.ResponseWriter, *http.Request) { polls++ })
+		r, rec := newRunner(t, mux)
+
+		err := r.Provision(context.Background(), App{ID: 1, Slug: "loja", Status: "pending"})
+
+		var apiErr *api.Error
+		if !errors.As(err, &apiErr) || apiErr.Status != status {
+			t.Fatalf("status %d: err = %v, want the api error", status, err)
+		}
+		if polls != 0 || len(rec.warns) != 0 || len(rec.polled) != 0 {
+			t.Errorf("status %d: it must not wait: polls = %d, warns = %q", status, polls, rec.warns)
+		}
+	}
+}
+
+func TestProvisionKeepsWaitingWhenTheServerSaysItIsAlreadyProvisioning(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/apps/loja/provision", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]any{"error": "já provisionando"})
+	})
+	mux.Handle("/cable", &cabletest.Handler{Messages: map[string][]map[string]any{
+		"ProvisionStatusChannel": {{"status": "provisioning"}, {"status": "active"}},
+	}})
+	r, _ := newRunner(t, mux)
+
+	if err := r.Provision(context.Background(), App{ID: 1, Slug: "loja", Status: "pending"}); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestWaitDeployReturnsTheContextErrorWithoutFallingBackToPolling(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/cable", &cabletest.Handler{})
+	r, rec := newRunner(t, mux)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := r.WaitDeploy(ctx, "loja", 7, time.Minute, 5)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if len(rec.warns) != 0 || len(rec.polled) != 0 {
+		t.Errorf("warns = %q, polled = %v", rec.warns, rec.polled)
 	}
 }

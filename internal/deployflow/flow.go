@@ -132,7 +132,9 @@ func (r *Runner) Provision(ctx context.Context, app App) error {
 		return nil
 	}
 	if app.Status == "pending" || app.Status == "error" {
-		_ = r.Client.Post(ctx, "/api/v1/apps/"+app.Slug+"/provision", nil, nil)
+		if err := r.requestProvision(ctx, app.Slug); err != nil {
+			return err
+		}
 	}
 	final := []string{"active", "error"}
 	status, err := r.Watch(ctx, ProvisionTimeout, func(wctx context.Context, conn *cable.Conn) (string, error) {
@@ -154,6 +156,22 @@ func (r *Runner) Provision(ctx context.Context, app App) error {
 	}
 	if status != "active" {
 		return errors.New("\nErro no provisionamento.")
+	}
+	return nil
+}
+
+// requestProvision pede o provisionamento. Cobrança (402), permissão (403) e app
+// inexistente (404) não se resolvem esperando: voltam na hora, com a mensagem da
+// API. Qualquer outro erro (409 "já provisionando", 5xx, rede) não impede a
+// espera, que é o que confirma o resultado.
+func (r *Runner) requestProvision(ctx context.Context, slug string) error {
+	err := r.Client.Post(ctx, "/api/v1/apps/"+slug+"/provision", nil, nil)
+	var apiErr *api.Error
+	if errors.As(err, &apiErr) {
+		switch apiErr.Status {
+		case http.StatusPaymentRequired, http.StatusForbidden, http.StatusNotFound:
+			return err
+		}
 	}
 	return nil
 }
