@@ -1,8 +1,8 @@
 {
   "device_code": "device_code-de-exemplo",
-  "user_code": "HLHR-LTRR",
+  "user_code": "DJPL-BGBN",
   "verification_uri": "https://jataicloud.com.br/cli/autorizar",
-  "verification_uri_complete": "https://jataicloud.com.br/cli/autorizar?codigo=HLHR-LTRR",
+  "verification_uri_complete": "https://jataicloud.com.br/cli/autorizar?codigo=DJPL-BGBN",
   "expires_in": 600,
   "interval": 5
 }

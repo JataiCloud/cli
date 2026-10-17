@@ -1,5 +1,5 @@
 {
-  "id": 2608,
+  "id": 3017,
   "status": "queued",
   "trigger": "manual",
   "branch": "main",
@@ -10,7 +10,7 @@
   "deploy_duration": null,
   "started_at": null,
   "finished_at": null,
-  "created_at": "2026-10-16T22:40:18.512-03:00",
+  "created_at": "2026-10-16T22:45:32.727-03:00",
   "process_failures": [],
-  "deployed_by": "Sophia Coqueiro"
+  "deployed_by": "Juliana da Madureira"
 }

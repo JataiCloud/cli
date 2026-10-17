@@ -28,6 +28,12 @@ func TestServerResponsesCarryWhatTheCLIReads(t *testing.T) {
 	fixture(t, "app_created", &created)
 	var apps []appInfo
 	fixture(t, "apps", &apps)
+	var withDeploy *deployInfo
+	for _, a := range apps {
+		if a.LastDeploy != nil {
+			withDeploy = a.LastDeploy
+		}
+	}
 	var deploy, deployCreated deployInfo
 	fixture(t, "deploy", &deploy)
 	fixture(t, "deploy_created", &deployCreated)
@@ -42,17 +48,19 @@ func TestServerResponsesCarryWhatTheCLIReads(t *testing.T) {
 	fixture(t, "device_token", &grant)
 
 	checks := map[string]bool{
-		"app: id, slug, status, url":         app.ID != 0 && app.Slug != "" && app.Status != "" && app.URL != "",
-		"app_created: id, slug, status":      created.ID != 0 && created.Slug != "" && created.Status != "",
-		"apps: id, slug, status":             len(apps) > 0 && apps[0].ID != 0 && apps[0].Slug != "" && apps[0].Status != "",
-		"deploy: id, status, commit_sha":     deploy.ID != 0 && deploy.Status != "" && deploy.CommitSHA != "",
-		"deploy: process_failures":           len(deploy.ProcessFailures) > 0 && deploy.ProcessFailures[0].Name != "" && deploy.ProcessFailures[0].Reason != "",
-		"deploy_created: id, status":         deployCreated.ID != 0 && deployCreated.Status != "",
-		"env: chave e valor":                 len(env) > 0,
-		"logs: timestamp, source, message":   len(logs) > 0 && logs[0].Timestamp != "" && logs[0].Source != "" && logs[0].Message != "",
-		"logs_search: timestamp, level, msg": len(found) > 0 && found[0].Timestamp != "" && found[0].Level != "" && found[0].Message != "",
-		"device_authorization: códigos":      start.DeviceCode != "" && start.UserCode != "" && start.VerificationURI != "" && start.VerificationURIComplete != "" && start.ExpiresIn > 0 && start.Interval > 0,
-		"device_token: token, user":          grant.Token != "" && grant.User.Name != "" && grant.User.Email != "",
+		"app: id, slug, status, url":                 app.ID != 0 && app.Slug != "" && app.Status != "" && app.URL != "",
+		"app_created: id, slug, status":              created.ID != 0 && created.Slug != "" && created.Status != "",
+		"apps: id, slug, status":                     len(apps) > 0 && apps[0].ID != 0 && apps[0].Slug != "" && apps[0].Status != "",
+		"app: last_deploy (id, status, created_at)":  lastDeployOK(app.LastDeploy),
+		"apps: last_deploy (id, status, created_at)": lastDeployOK(withDeploy),
+		"deploy: id, status, commit_sha":             deploy.ID != 0 && deploy.Status != "" && deploy.CommitSHA != "",
+		"deploy: process_failures":                   len(deploy.ProcessFailures) > 0 && deploy.ProcessFailures[0].Name != "" && deploy.ProcessFailures[0].Reason != "",
+		"deploy_created: id, status":                 deployCreated.ID != 0 && deployCreated.Status != "",
+		"env: chave e valor":                         len(env) > 0,
+		"logs: timestamp, source, message":           len(logs) > 0 && logs[0].Timestamp != "" && logs[0].Source != "" && logs[0].Message != "",
+		"logs_search: timestamp, level, msg":         len(found) > 0 && found[0].Timestamp != "" && found[0].Level != "" && found[0].Message != "",
+		"device_authorization: códigos":              start.DeviceCode != "" && start.UserCode != "" && start.VerificationURI != "" && start.VerificationURIComplete != "" && start.ExpiresIn > 0 && start.Interval > 0,
+		"device_token: token, user":                  grant.Token != "" && grant.User.Name != "" && grant.User.Email != "",
 	}
 	for field, ok := range checks {
 		if !ok {
@@ -63,6 +71,10 @@ func TestServerResponsesCarryWhatTheCLIReads(t *testing.T) {
 
 // Campos que o servidor pode mandar nulos (last_deploy, process) ou que a CLI
 // lê como lista: o contrato confere que a chave existe na resposta real.
+func lastDeployOK(d *deployInfo) bool {
+	return d != nil && d.ID != 0 && d.Status != "" && d.CreatedAt != ""
+}
+
 func TestServerResponsesKeepTheKeysTheCLIReads(t *testing.T) {
 	var app map[string]any
 	fixture(t, "app", &app)
@@ -82,6 +94,14 @@ func TestServerResponsesKeepTheKeysTheCLIReads(t *testing.T) {
 				t.Errorf("%s: a resposta real não traz a chave %q", name, key)
 			}
 		}
+	}
+	// commit_sha pode ser nulo num deploy sem commit: a chave tem de existir.
+	last, ok := app["last_deploy"].(map[string]any)
+	if !ok {
+		t.Fatal("app: last_deploy da resposta real não é um objeto (a fixture precisa de um app com deploy)")
+	}
+	if _, ok := last["commit_sha"]; !ok {
+		t.Error("app.last_deploy: a resposta real não traz a chave \"commit_sha\"")
 	}
 	if len(logs) == 0 {
 		t.Fatal("logs: fixture sem entradas")

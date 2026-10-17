@@ -8,35 +8,28 @@ import (
 )
 
 // deploy_log.json é a resposta real de GET /api/v1/apps/:slug/deploys/:id/log,
-// gravada pelos request specs da plataforma (ver README).
+// gravada pelos request specs da plataforma (ver README). O fluxo só lê log;
+// deploy_id, status e line_count são conferidos pela chave, porque um log
+// vazio é uma resposta legítima.
 func TestDeployLogResponseCarriesWhatTheFlowReads(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "cli", "testdata", "api", "deploy_log.json"))
 	if err != nil {
 		t.Fatalf("fixture deploy_log ausente — regenere com CLI_FIXTURES_DIR (README): %v", err)
 	}
-	var body struct {
-		DeployID  int    `json:"deploy_id"`
-		Status    string `json:"status"`
-		LineCount int    `json:"line_count"`
-		Log       string `json:"log"`
-	}
+	var body buildLogResponse
 	if err := json.Unmarshal(data, &body); err != nil {
-		t.Fatalf("fixture deploy_log não cabe nos tipos do fluxo: %v", err)
+		t.Fatalf("fixture deploy_log não cabe em buildLogResponse: %v", err)
+	}
+	if body.Log == "" {
+		t.Error("resposta real de /log sem o texto do log")
 	}
 	var keys map[string]any
 	if err := json.Unmarshal(data, &keys); err != nil {
-		t.Fatal(err)
+		t.Fatalf("fixture deploy_log não é um objeto JSON: %v", err)
 	}
-
-	checks := map[string]bool{
-		"deploy_id":  body.DeployID != 0,
-		"status":     body.Status != "",
-		"line_count": body.LineCount > 0,
-		"log":        body.Log != "",
-	}
-	for field, ok := range checks {
-		if _, present := keys[field]; !ok || !present {
-			t.Errorf("resposta real de /log sem o que o fluxo lê: %s", field)
+	for _, key := range []string{"deploy_id", "status", "line_count", "log"} {
+		if _, ok := keys[key]; !ok {
+			t.Errorf("resposta real de /log sem a chave %q", key)
 		}
 	}
 }

@@ -1,19 +1,19 @@
 {
   "user": {
     "name": "Ana",
-    "email": "verlene@johnson-deckow.test"
+    "email": "leigh_goodwin@dooley.test"
   },
   "team": {
     "name": "Equipe de Ana",
     "slug": "equipe-de-ana"
   },
   "apps": {
-    "count": 0,
+    "count": 1,
     "limit": 50
   },
   "courtesy": {
-    "available": true,
-    "app": null
+    "available": false,
+    "app": "loja"
   },
   "payment_method": false
 }

@@ -1,20 +1,25 @@
 {
-  "id": 8259,
-  "name": "app-180",
-  "slug": "app-180",
+  "id": 10295,
+  "name": "app-159",
+  "slug": "app-159",
   "stack": "rails",
   "preset": "escala_1",
   "region": "br-se1",
   "status": "active",
-  "subdomain": "app-180",
-  "url": "https://app-180.jataiapp.com.br",
+  "subdomain": "app-159",
+  "url": "https://app-159.jataiapp.com.br",
   "repo_url": null,
   "repo_branch": "main",
   "auto_deploy": false,
   "dockerfile_path": "Dockerfile",
   "port": 3000,
   "database_plan": null,
-  "created_at": "2026-10-16T22:40:16.294-03:00",
-  "updated_at": "2026-10-16T22:40:16.294-03:00",
-  "last_deploy": null
+  "created_at": "2026-10-16T22:45:29.386-03:00",
+  "updated_at": "2026-10-16T22:45:29.386-03:00",
+  "last_deploy": {
+    "id": 2929,
+    "status": "live",
+    "commit_sha": "cc70519b60a713096f81690f7285c55bcc8a4264",
+    "created_at": "2026-10-16T22:45:29.387-03:00"
+  }
 }

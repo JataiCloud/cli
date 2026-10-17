@@ -252,11 +252,15 @@ func (r *Runner) statusFunc() func(string) {
 	return nil
 }
 
+// buildLogResponse é o JSON de GET /api/v1/apps/:slug/deploys/:id/log; o fluxo
+// só lê log (o servidor manda também deploy_id, status e line_count).
+type buildLogResponse struct {
+	Log string `json:"log"`
+}
+
 // BuildLogTail devolve as últimas lines linhas do log do build do deploy.
 func (r *Runner) BuildLogTail(ctx context.Context, slug string, id, lines int) ([]string, error) {
-	var out struct {
-		Log string `json:"log"`
-	}
+	var out buildLogResponse
 	query := url.Values{"tail": {strconv.Itoa(lines)}}
 	if err := r.Client.Get(ctx, fmt.Sprintf("/api/v1/apps/%s/deploys/%d/log", slug, id), query, &out); err != nil {
 		return nil, err
