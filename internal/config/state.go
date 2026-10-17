@@ -14,6 +14,9 @@ type State struct {
 
 func LoadState(p Paths) State {
 	var s State
+	if !p.known() {
+		return s
+	}
 	if data, err := os.ReadFile(p.StateFile()); err == nil {
 		_ = json.Unmarshal(data, &s)
 	}
@@ -21,6 +24,9 @@ func LoadState(p Paths) State {
 }
 
 func SaveState(p Paths, s State) error {
+	if !p.known() {
+		return ErrNoHome
+	}
 	if err := os.MkdirAll(p.Dir(), 0o700); err != nil {
 		return err
 	}

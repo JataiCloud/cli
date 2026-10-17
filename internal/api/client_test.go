@@ -157,3 +157,64 @@ func TestDebugNeverShowsTheToken(t *testing.T) {
 		t.Fatalf("debug = %q", debug.String())
 	}
 }
+
+func TestRedirectToPlainHTTPIsRefusedAndTheTokenNeverFollows(t *testing.T) {
+	var plainHits atomic.Int32
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		plainHits.Add(1)
+		w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(plain.Close)
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(secure.Close)
+	c, err := New(secure.URL, "jat_segredo", "ua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.HTTP, c.RetryDelay = secure.Client(), 0
+
+	err = c.Get(context.Background(), "/api/v1/account", nil, nil)
+
+	if !errors.Is(err, ErrUnsafeRedirect) || IsNetwork(err) {
+		t.Fatalf("err = %v", err)
+	}
+	if plainHits.Load() != 0 {
+		t.Fatalf("followed the redirect %d times", plainHits.Load())
+	}
+}
+
+func TestRedirectToAnotherHostIsRefused(t *testing.T) {
+	var otherHits atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		otherHits.Add(1)
+	}))
+	t.Cleanup(other.Close)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/roubo", http.StatusTemporaryRedirect)
+	})
+
+	err := c.Post(context.Background(), "/api/v1/apps", map[string]any{"a": 1}, nil)
+
+	if !errors.Is(err, ErrUnsafeRedirect) || otherHits.Load() != 0 {
+		t.Fatalf("err = %v, hits = %d", err, otherHits.Load())
+	}
+}
+
+func TestRedirectWithinTheSameHostIsFollowed(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/velho" {
+			http.Redirect(w, r, "/novo", http.StatusMovedPermanently)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer jat_segredo" {
+			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		w.Write([]byte(`{"slug":"loja"}`))
+	})
+	var out struct{ Slug string }
+	if err := c.Get(context.Background(), "/velho", nil, &out); err != nil || out.Slug != "loja" {
+		t.Fatalf("out = %+v, err = %v", out, err)
+	}
+}

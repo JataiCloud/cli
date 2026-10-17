@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -155,5 +157,47 @@ func TestSaveTokenReplacesWiderCredentials(t *testing.T) {
 	entries, _ := os.ReadDir(p.Dir())
 	if len(entries) != 1 {
 		t.Fatalf("leftover files in %s: %d entries", p.Dir(), len(entries))
+	}
+}
+
+func TestWritesRefuseAnUnknownHome(t *testing.T) {
+	wd := t.TempDir()
+	t.Chdir(wd)
+	for _, home := range []string{"", "relativa"} {
+		p := Paths{Home: home}
+		if err := SaveToken(p, "jat_x"); !errors.Is(err, ErrNoHome) {
+			t.Errorf("SaveToken(%q) err = %v", home, err)
+		}
+		if err := ClearToken(p); !errors.Is(err, ErrNoHome) {
+			t.Errorf("ClearToken(%q) err = %v", home, err)
+		}
+		if err := SaveState(p, State{LatestVersion: "2.0.0"}); !errors.Is(err, ErrNoHome) {
+			t.Errorf("SaveState(%q) err = %v", home, err)
+		}
+	}
+	if entries, _ := os.ReadDir(wd); len(entries) != 0 {
+		t.Fatalf("wrote into the working directory: %v", entries)
+	}
+	if !strings.Contains(ErrNoHome.Error(), "HOME") {
+		t.Fatalf("message = %q", ErrNoHome)
+	}
+}
+
+func TestReadsIgnoreFilesRelativeToAnUnknownHome(t *testing.T) {
+	wd := t.TempDir()
+	t.Chdir(wd)
+	os.MkdirAll(filepath.Join(wd, ".jatai"), 0o700)
+	os.WriteFile(filepath.Join(wd, ".jatai", "credentials.json"), []byte(`{"token":"do-projeto"}`), 0o600)
+	os.WriteFile(filepath.Join(wd, ".jatai", "state.json"), []byte(`{"latest_version":"9.9.9"}`), 0o600)
+
+	p := Paths{}
+	if got := Token(p, env(nil)); got != "" {
+		t.Fatalf("token = %q", got)
+	}
+	if got := Token(p, env(map[string]string{"JATAI_TOKEN": "jat_env"})); got != "jat_env" {
+		t.Fatalf("JATAI_TOKEN = %q", got)
+	}
+	if got := LoadState(p); got.LatestVersion != "" {
+		t.Fatalf("state = %+v", got)
 	}
 }

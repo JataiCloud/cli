@@ -138,10 +138,13 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, string, error) {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 	c.debugf("→ %s %s", r.method, target)
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
+		}
+		if errors.Is(err, ErrUnsafeRedirect) {
+			return nil, "", ErrUnsafeRedirect
 		}
 		return nil, "", &networkError{err: err}
 	}
@@ -155,6 +158,41 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, string, error) {
 		return nil, "", newError(resp.StatusCode, data)
 	}
 	return data, resp.Header.Get("Content-Type"), nil
+}
+
+// ErrUnsafeRedirect: a API mandou seguir para http ou para outro endereço; a
+// requisição para ali, e o Authorization não vai junto.
+var ErrUnsafeRedirect = errors.New("a API do Jataí redirecionou para um endereço inseguro ou de outro servidor; " +
+	"a requisição foi interrompida para proteger sua credencial. Confira JATAI_API_URL")
+
+// httpClient é uma cópia rasa do cliente HTTP com a regra de redirecionamento
+// da CLI, valendo também para um cliente injetado (testes, MCP).
+func (c *Client) httpClient() *http.Client {
+	hc := *c.HTTP
+	next := hc.CheckRedirect
+	hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := safeRedirect(req, via); err != nil {
+			return err
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		return nil
+	}
+	return &hc
+}
+
+// safeRedirect só segue para o mesmo host, sem trocar https por http; e no
+// máximo 10 vezes, como o padrão do net/http.
+func safeRedirect(req *http.Request, via []*http.Request) error {
+	first := via[0].URL
+	if req.URL.Host != first.Host || (first.Scheme == "https" && req.URL.Scheme != "https") {
+		return ErrUnsafeRedirect
+	}
+	if len(via) >= 10 {
+		return errors.New("a API do Jataí redirecionou vezes demais")
+	}
+	return nil
 }
 
 func decode(data []byte, out any) error {

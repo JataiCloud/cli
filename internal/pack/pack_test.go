@@ -276,3 +276,26 @@ func mapsKeys(m map[string]*tar.Header) func(func(string) bool) {
 		}
 	}
 }
+
+func TestPackSkipsTheJataiCredentialsDirButKeepsTheProjectFile(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "package.json", "{}", 0o644)
+	write(t, dir, ".jatai.yml", "app: loja\n", 0o644)
+	write(t, dir, ".jatai/credentials.json", `{"token":"x"}`, 0o600)
+	write(t, dir, "sub/.jatai/state.json", "{}", 0o600)
+
+	res, err := Pack(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(res.Path)
+	got := entries(t, res.Path)
+	if got[".jatai.yml"] == nil {
+		t.Error("missing .jatai.yml")
+	}
+	for _, name := range []string{".jatai/credentials.json", "sub/.jatai/state.json"} {
+		if got[name] != nil {
+			t.Errorf("%s should be ignored", name)
+		}
+	}
+}

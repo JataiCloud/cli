@@ -28,11 +28,13 @@ var ErrTooLarge = errors.New("pacote acima do limite do servidor")
 // `.next`, `.vercel` e `.turbo` são saída de build/cache local: o servidor
 // refaz o build, e o `.next/cache` de quem rodou `npm run dev` passa de
 // centenas de MB. O .dockerignore do projeto entra depois, com a semântica
-// do Docker — e pode reincluir algo com `!`.
+// do Docker — e pode reincluir algo com `!`. `.jatai` é a pasta de
+// credenciais da CLI (só cai num projeto se a pasta pessoal estiver errada);
+// o `.jatai.yml` é arquivo e continua indo.
 var defaultIgnores = []string{
 	"**/.git", "**/node_modules", "**/tmp", "**/log", "**/.bundle", "**/vendor/bundle",
 	"**/.env", "**/.env.*", "**/*.log", "**/coverage",
-	"**/.next", "**/.vercel", "**/.turbo",
+	"**/.next", "**/.vercel", "**/.turbo", "**/.jatai",
 	"config/master.key", "config/credentials.yml.enc", "config/credentials", "config/credentials/*.yml.enc",
 	"**/*.pem", "**/*.key", "storage/*.key",
 }

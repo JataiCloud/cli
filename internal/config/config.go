@@ -21,6 +21,15 @@ func DefaultPaths() (Paths, error) {
 	return Paths{Home: home}, err
 }
 
+// ErrNoHome: sem a pasta pessoal, os arquivos da CLI cairiam relativos ao
+// diretório atual — a credencial iria parar dentro do projeto e no deploy.
+var ErrNoHome = errors.New("Não encontrei a pasta pessoal deste usuário (variável HOME; no Windows, USERPROFILE), " +
+	"onde a CLI do Jataí guarda a credencial. Defina HOME com um caminho absoluto e tente de novo.")
+
+// known diz se Home é um caminho absoluto: só então os arquivos da CLI têm
+// lugar certo para ficar.
+func (p Paths) known() bool { return p.Home != "" && filepath.IsAbs(p.Home) }
+
 func (p Paths) Dir() string             { return filepath.Join(p.Home, ".jatai") }
 func (p Paths) CredentialsFile() string { return filepath.Join(p.Dir(), "credentials.json") }
 func (p Paths) LegacyCredentialsFile() string {
@@ -44,10 +53,14 @@ type credentials struct {
 }
 
 // Token: JATAI_TOKEN (CI) tem prioridade; depois o arquivo da CLI; depois o
-// arquivo da gem antiga (~/.brasa), que continua valendo na transição.
+// arquivo da gem antiga (~/.brasa), que continua valendo na transição. Sem a
+// pasta pessoal, nenhum arquivo é lido.
 func Token(p Paths, getenv func(string) string) string {
 	if t := strings.TrimSpace(getenv("JATAI_TOKEN")); t != "" {
 		return t
+	}
+	if !p.known() {
+		return ""
 	}
 	for _, file := range []string{p.CredentialsFile(), p.LegacyCredentialsFile()} {
 		data, err := os.ReadFile(file)
@@ -65,6 +78,9 @@ func Token(p Paths, getenv func(string) string) string {
 // SaveToken grava o token com permissão restrita, mesmo quando o diretório
 // ou o arquivo já existem com permissão mais ampla.
 func SaveToken(p Paths, token string) error {
+	if !p.known() {
+		return ErrNoHome
+	}
 	if err := os.MkdirAll(p.Dir(), 0o700); err != nil {
 		return err
 	}
@@ -109,6 +125,9 @@ func writeAtomic(dir, target string, data []byte) error {
 }
 
 func ClearToken(p Paths) error {
+	if !p.known() {
+		return ErrNoHome
+	}
 	for _, file := range []string{p.CredentialsFile(), p.LegacyCredentialsFile()} {
 		if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
