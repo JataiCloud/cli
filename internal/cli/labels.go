@@ -44,7 +44,6 @@ func colorizeStatus(u *ui.UI, s string) string {
 	}
 }
 
-//nolint:unused // usado pelos comandos das próximas tarefas
 func colorizeLevel(u *ui.UI, level string) string {
 	switch level {
 	case "error":

@@ -39,6 +39,7 @@ func newRootCmd(a *App) *cobra.Command {
 		},
 		newLoginCmd(a), newLogoutCmd(a), newInitCmd(a), newUpCmd(a), newDeployCmd(a),
 		newStatusCmd(a), newEnvCmd(a),
+		newLogsCmd(a), newLogsSearchCmd(a), newLogsExportCmd(a),
 	)
 	return root
 }
