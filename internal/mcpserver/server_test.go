@@ -74,7 +74,7 @@ func newMCPTest(t *testing.T) *mcpTest {
 		ReconnectDelays: []time.Duration{time.Millisecond},
 		WelcomeTimeout:  time.Second,
 		Budget:          200 * time.Millisecond,
-		UpdateHint:      "npm update -g jatai",
+		UpdateHint:      "npm update -g jatai-cli",
 		Log:             io.Discard,
 		Git:             func(string, ...string) (string, error) { return "", errors.New("sem git") },
 	}

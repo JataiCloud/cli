@@ -68,7 +68,7 @@ func TestUpdateFromNpmOnlyPrintsTheHint(t *testing.T) {
 
 	code := e.run("update")
 
-	if code != 0 || !strings.Contains(e.out.String(), "Esta instalação veio do npm. Atualize com: npm update -g jatai") {
+	if code != 0 || !strings.Contains(e.out.String(), "Esta instalação veio do npm. Atualize com: npm update -g jatai-cli") {
 		t.Fatalf("code = %d, out = %q, err = %q", code, e.out, e.err)
 	}
 	if downloads != 0 || lookups != 0 {
@@ -84,7 +84,7 @@ func TestUpdateFromNpxPointsToTheLatestTag(t *testing.T) {
 
 	code := e.run("update")
 
-	if code != 0 || !strings.Contains(e.out.String(), "npx -y jatai@latest") {
+	if code != 0 || !strings.Contains(e.out.String(), "npx -y jatai-cli@latest") {
 		t.Fatalf("code = %d, out = %q", code, e.out)
 	}
 }

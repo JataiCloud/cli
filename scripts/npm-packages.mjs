@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Monta (e, com --publish, publica) os pacotes npm do jatai a partir do
 // dist/artifacts.json do GoReleaser: um pacote por plataforma com o binário
-// (@jataicloud/cli-*) e o pacote principal `jatai`, com o lançador em JS.
+// (@jataicloud/cli-*) e o pacote principal `jatai-cli`, com o lançador em JS.
+// O npm bloqueia o nome `jatai` (parecido com jotai/jiti); o comando instalado segue `jatai`.
 //
 // Uso: node scripts/npm-packages.mjs --version 2.0.0 [--publish]
 //
@@ -32,7 +33,7 @@ const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
 export const packageName = (p) => `${SCOPE}/cli-${p.os}-${p.cpu}`;
 export const binaryFile = (p) => (p.os === "win32" ? "jatai.exe" : "jatai");
 
-// Prerelease (2.0.0-rc.1) não pode virar `latest`: quem faz `npm i jatai` recebe a estável.
+// Prerelease (2.0.0-rc.1) não pode virar `latest`: quem faz `npm i jatai-cli` recebe a estável.
 export const distTag = (version) => (version.includes("-") ? "next" : "latest");
 
 function findBinary(artifacts, platform) {
@@ -84,14 +85,14 @@ export function buildPackages({ version, artifactsPath, outDir }) {
     dirs.push({ name, dir });
   }
 
-  const dir = join(outDir, "jatai");
+  const dir = join(outDir, "jatai-cli");
   mkdirSync(join(dir, "bin"), { recursive: true });
   const launcher = join(dir, "bin", "jatai.js");
-  copyFileSync(join(root, "npm", "jatai", "bin", "jatai.js"), launcher);
+  copyFileSync(join(root, "npm", "jatai-cli", "bin", "jatai.js"), launcher);
   chmodSync(launcher, 0o755);
-  copyFileSync(join(root, "npm", "jatai", "README.md"), join(dir, "README.md"));
+  copyFileSync(join(root, "npm", "jatai-cli", "README.md"), join(dir, "README.md"));
   writePackage(dir, {
-    name: "jatai",
+    name: "jatai-cli",
     version,
     description: "CLI da Jataí: deploy de apps na nuvem brasileira, e servidor MCP para agentes de IA",
     license: "MIT",
@@ -104,7 +105,7 @@ export function buildPackages({ version, artifactsPath, outDir }) {
     engines: { node: ">=18" },
     optionalDependencies,
   });
-  dirs.push({ name: "jatai", dir });
+  dirs.push({ name: "jatai-cli", dir });
   return dirs;
 }
 

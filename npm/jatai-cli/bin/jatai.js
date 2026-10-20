@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// Lançador do pacote npm `jatai`: o binário Go vem num pacote por plataforma
+// Lançador do pacote npm `jatai-cli` (comando `jatai`): o binário Go vem num pacote por plataforma
 // (@jataicloud/cli-*, instalado como optionalDependency) e este arquivo só o
 // encontra e o executa.
 

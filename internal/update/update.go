@@ -64,9 +64,9 @@ func Hint(m Method) string {
 	case MethodScoop:
 		return "scoop update jatai"
 	case MethodNpm:
-		return "npm update -g jatai"
+		return "npm update -g jatai-cli"
 	case MethodNpx:
-		return "npx -y jatai@latest"
+		return "npx -y jatai-cli@latest"
 	default:
 		return "curl -fsSL https://jataicloud.com.br/install.sh | sh"
 	}

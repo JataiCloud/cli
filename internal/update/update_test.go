@@ -41,10 +41,10 @@ func TestDetectMethod(t *testing.T) {
 }
 
 func TestHintForNpmInstalls(t *testing.T) {
-	if got := Hint(MethodNpm); got != "npm update -g jatai" {
+	if got := Hint(MethodNpm); got != "npm update -g jatai-cli" {
 		t.Errorf("npm hint = %q", got)
 	}
-	if got := Hint(MethodNpx); got != "npx -y jatai@latest" {
+	if got := Hint(MethodNpx); got != "npx -y jatai-cli@latest" {
 		t.Errorf("npx hint = %q", got)
 	}
 }

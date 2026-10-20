@@ -83,9 +83,9 @@ describe("npm-packages.mjs --version 2.0.0-rc.1", () => {
   });
 
   test("builds the main package with the launcher and exact optionalDependencies", () => {
-    const dir = join(cwd, "dist", "npm", "jatai");
+    const dir = join(cwd, "dist", "npm", "jatai-cli");
     const pkg = readJSON(join(dir, "package.json"));
-    assert.equal(pkg.name, "jatai");
+    assert.equal(pkg.name, "jatai-cli");
     assert.equal(pkg.version, "2.0.0-rc.1");
     assert.deepEqual(pkg.bin, { jatai: "bin/jatai.js" });
     assert.equal(pkg.engines.node, ">=18");

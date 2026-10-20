@@ -42,7 +42,7 @@ func (s *state) explainAccount(err error) string {
 
 func hintOrDefault(hint string) string {
 	if hint == "" {
-		return "jatai update (ou npm update -g jatai, se veio do npm)"
+		return "jatai update (ou npm update -g jatai-cli, se veio do npm)"
 	}
 	return hint
 }

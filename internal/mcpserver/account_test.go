@@ -427,7 +427,7 @@ func TestAccountNotFoundDoesNotSendTheAgentInCircles(t *testing.T) {
 
 	text, isErr := m.call("jatai_conta", nil)
 
-	assertContains(t, text, "O Jataí não reconheceu esta operação", "npm update -g jatai")
+	assertContains(t, text, "O Jataí não reconheceu esta operação", "npm update -g jatai-cli")
 	assertMissing(t, text, "App não encontrado", "Use jatai_conta")
 	if !isErr {
 		t.Fatal("expected an error")

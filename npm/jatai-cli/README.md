@@ -1,4 +1,4 @@
-# jatai
+# jatai-cli
 
 CLI da [Jataí](https://jataicloud.com.br): deploy de apps Rails, Node.js, sites estáticos ou qualquer Dockerfile na nuvem brasileira.
 
@@ -6,8 +6,8 @@ Este pacote instala o binário `jatai` da sua plataforma (macOS arm64/x64, Linux
 
 ## Uso
 
-    npx jatai --help
-    npm install -g jatai
+    npx jatai-cli --help
+    npm install -g jatai-cli
 
     jatai login
     jatai init
@@ -19,7 +19,7 @@ O `jatai mcp` expõe a plataforma a agentes por stdio. Num cliente MCP:
 
     {
       "mcpServers": {
-        "jatai": { "command": "npx", "args": ["-y", "jatai@latest", "mcp"] }
+        "jatai": { "command": "npx", "args": ["-y", "jatai-cli@latest", "mcp"] }
       }
     }
 
