@@ -50,6 +50,10 @@ func (s *state) candidateDir(ctx context.Context, req *mcp.CallToolRequest, past
 	if err != nil {
 		return "", err
 	}
+	// No Windows, `\proj` não é absoluto: é a raiz do drive atual.
+	if runtime.GOOS == "windows" && (strings.HasPrefix(pasta, `\`) || strings.HasPrefix(pasta, "/")) {
+		return filepath.VolumeName(wd) + pasta, nil
+	}
 	return filepath.Join(wd, pasta), nil
 }
 
@@ -101,9 +105,13 @@ func fileURIPath(uri string) (string, bool) {
 		return "", false
 	}
 	path := u.Path
-	// file:///C:/proj → /C:/proj no Windows.
-	if runtime.GOOS == "windows" && len(path) > 2 && path[0] == '/' && path[2] == ':' {
-		path = path[1:]
+	if runtime.GOOS == "windows" {
+		// file://C:/proj põe o drive no host; file:///C:/proj deixa /C:/proj no caminho.
+		if len(u.Host) == 2 && u.Host[1] == ':' {
+			path = u.Host + path
+		} else if len(path) > 2 && path[0] == '/' && path[2] == ':' {
+			path = path[1:]
+		}
 	}
 	return filepath.FromSlash(path), true
 }

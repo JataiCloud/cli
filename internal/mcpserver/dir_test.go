@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -28,8 +30,13 @@ func probeDir(m *mcpTest) {
 	}
 }
 
+// fileURI monta a URI como os clientes mandam: file:///C:/proj no Windows.
 func fileURI(path string) string {
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p}).String()
 }
 
 func TestResolveDirUsesTheGivenFolder(t *testing.T) {
@@ -96,7 +103,11 @@ func TestResolveDirRefusesHomeRootAndMissingFolders(t *testing.T) {
 		if !isErr {
 			t.Fatalf("%q accepted: %q", pasta, got)
 		}
-		assertContains(t, got, "Informe `pasta` com o caminho absoluto da pasta do projeto (recebi "+filepath.Clean(pasta)+").")
+		want := filepath.Clean(pasta)
+		if runtime.GOOS == "windows" && pasta == string(filepath.Separator) {
+			want = filepath.VolumeName(m.dir) + `\`
+		}
+		assertContains(t, got, "Informe `pasta` com o caminho absoluto da pasta do projeto (recebi "+want+").")
 	}
 }
 
