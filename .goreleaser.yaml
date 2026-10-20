@@ -42,14 +42,16 @@ release:
     - glob: ./scripts/install.sh
     - glob: ./scripts/install.ps1
 
-# Sem TAP_GITHUB_TOKEN (variável ausente ou vazia) o GoReleaser não publica no
-# Homebrew nem no Scoop, mas segue com binários e npm. Ver README, "Release".
+# Sem TAP_GITHUB_TOKEN (secret vazio) o GoReleaser não publica no Homebrew nem
+# no Scoop, mas segue com binários e npm. Ver README, "Release". O `token`
+# precisa ser exatamente {{ .Env.VAR }} (o GoReleaser recusa outra forma ao
+# publicar); o workflow sempre define a variável, mesmo vazia.
 homebrew_casks:
   - name: jatai
     repository:
       owner: JataiCloud
       name: homebrew-tap
-      token: '{{ index .Env "TAP_GITHUB_TOKEN" }}'
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     skip_upload: '{{ if not (index .Env "TAP_GITHUB_TOKEN") }}true{{ end }}'
     directory: Casks
     homepage: https://jataicloud.com.br
@@ -67,7 +69,7 @@ scoops:
     repository:
       owner: JataiCloud
       name: scoop-bucket
-      token: '{{ index .Env "TAP_GITHUB_TOKEN" }}'
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     skip_upload: '{{ if not (index .Env "TAP_GITHUB_TOKEN") }}true{{ end }}'
     homepage: https://jataicloud.com.br
     description: CLI da Jataí — deploy na nuvem brasileira
