@@ -20,12 +20,13 @@ const PLATFORMS = {
   "@jataicloud/cli-win32-x64": { os: "win32", cpu: "x64", file: "jatai.exe" },
 };
 
-// Um diretório de trabalho como o do runner depois do GoReleaser: dist/artifacts.json
-// e os binários nos caminhos que ele registra.
-function fakeDist() {
+// Um diretório de trabalho como o do runner depois do GoReleaser: dist/artifacts.json,
+// o metadata.json com a versão compilada e os binários nos caminhos que ele registra.
+function fakeDist(builtVersion) {
   const cwd = mkdtempSync(join(tmpdir(), "jatai-npm-"));
   mkdirSync(join(cwd, "dist"));
   copyFileSync(join(here, "testdata", "artifacts.json"), join(cwd, "dist", "artifacts.json"));
+  writeFileSync(join(cwd, "dist", "metadata.json"), JSON.stringify({ project_name: "jatai", version: builtVersion }));
   for (const a of artifacts.filter((x) => x.type === "Binary")) {
     mkdirSync(dirname(join(cwd, a.path)), { recursive: true });
     writeFileSync(join(cwd, a.path), `binario ${a.goos}/${a.goarch}`, { mode: 0o644 });
@@ -48,7 +49,7 @@ describe("npm-packages.mjs --version 2.0.0-rc.1", () => {
   let cwd;
   let result;
   before(() => {
-    cwd = fakeDist();
+    cwd = fakeDist("2.0.0-rc.1");
     result = run(cwd, "--version", "2.0.0-rc.1");
   });
   after(() => rmSync(cwd, { recursive: true, force: true }));
@@ -107,7 +108,7 @@ describe("npm-packages.mjs --version 2.0.0-rc.1", () => {
 
 describe("npm-packages.mjs errors", () => {
   test("a stable version reports the latest tag", () => {
-    const cwd = fakeDist();
+    const cwd = fakeDist("2.0.0");
     try {
       const out = run(cwd, "--version", "2.0.0");
       assert.equal(out.status, 0, out.stderr);
@@ -118,7 +119,7 @@ describe("npm-packages.mjs errors", () => {
   });
 
   test("rejects a version with a leading v", () => {
-    const cwd = fakeDist();
+    const cwd = fakeDist("2.0.0");
     try {
       const out = run(cwd, "--version", "v2.0.0");
       assert.notEqual(out.status, 0);
@@ -129,7 +130,7 @@ describe("npm-packages.mjs errors", () => {
   });
 
   test("requires --version", () => {
-    const cwd = fakeDist();
+    const cwd = fakeDist("2.0.0");
     try {
       const out = run(cwd);
       assert.notEqual(out.status, 0);
@@ -139,8 +140,20 @@ describe("npm-packages.mjs errors", () => {
     }
   });
 
+  test("refuses binaries built for another version than the one being published", () => {
+    const cwd = fakeDist("2.0.0-rc.2");
+    try {
+      const out = run(cwd, "--version", "2.0.0");
+      assert.notEqual(out.status, 0);
+      assert.match(out.stderr, /binários em dist são da versão 2\.0\.0-rc\.2, não da 2\.0\.0/);
+      assert.equal(existsSync(join(cwd, "dist", "npm")), false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("fails when a platform binary is missing from artifacts.json", () => {
-    const cwd = fakeDist();
+    const cwd = fakeDist("2.0.0");
     try {
       const path = join(cwd, "dist", "artifacts.json");
       const trimmed = readJSON(path).filter((a) => !(a.type === "Binary" && a.goos === "windows"));

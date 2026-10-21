@@ -48,6 +48,18 @@ function findBinary(artifacts, platform) {
   return found[0].path;
 }
 
+// O GoReleaser escolhe a tag pelo commit; com duas tags no mesmo commit ele já gerou os
+// binários de outra versão (a 2.0.0 saiu com o binário da 2.0.0-rc.2). O npm não deixa
+// republicar uma versão, então a conferência vem antes de montar qualquer pacote.
+function assertDistVersion(artifacts, version) {
+  const metadata = artifacts.find((a) => a.type === "Metadata");
+  if (!metadata) throw new Error("dist/artifacts.json não registra o metadata.json do GoReleaser");
+  const built = JSON.parse(readFileSync(metadata.path, "utf8")).version;
+  if (built !== version) {
+    throw new Error(`os binários em dist são da versão ${built}, não da ${version}: o GoReleaser usou outra tag`);
+  }
+}
+
 function writePackage(dir, manifest) {
   writeFileSync(join(dir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 }
@@ -59,6 +71,7 @@ export function buildPackages({ version, artifactsPath, outDir }) {
     throw new Error(`versão inválida: "${version}" (use 2.0.0 ou 2.0.0-rc.1, sem o "v")`);
   }
   const artifacts = JSON.parse(readFileSync(artifactsPath, "utf8"));
+  assertDistVersion(artifacts, version);
   rmSync(outDir, { recursive: true, force: true });
 
   const dirs = [];

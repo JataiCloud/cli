@@ -37,6 +37,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Sem isto o GoReleaser escolhe a tag pelo commit: com v2.0.0 e v2.0.0-rc.2 no mesmo
+          # commit, ele refez a release da rc.2 e o npm publicou a 2.0.0 com o binário da rc.2.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
       - uses: actions/attest-build-provenance@v4
         with:
